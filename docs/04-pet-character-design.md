@@ -150,7 +150,7 @@ python tools/prepare-art.py \
 | `think` | **thinking** | 追问进度 | 轻微前倾 + 气泡弹出 |
 | `sleep` | **sleep** | 23:00–07:00 或无操作 30min | 呼吸放缓至 8s 周期 |
 | `celebrate` | **playing** | 任务完成 | 跳跃 2 次 + SVG 撒花 |
-| `drag` | **side** | 拖拽中 | 随移动方向倾斜 ±6° |
+| `drag` | **side** | 左键单击随机切换（拖拽窗口本身不切状态） | 随移动方向倾斜 ±6° |
 
 **MVP 用 6 张**：`front` / `working` / `thinking` / `sleep` / `playing` / `side`。
 

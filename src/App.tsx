@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { Pet } from "./pet/Pet";
@@ -20,8 +20,33 @@ const DEV_KEYS: Record<string, PetState> = {
   "7": "drag",
 };
 
-/** 窗口停止移动多久后回到 idle */
-const DRAG_SETTLE_MS = 260;
+/**
+ * 按下与抬起的位置差不超过这个值（CSS px）就算"没动"，判定为单击。
+ * 留一点容差是因为按下时鼠标几乎不可能一像素都不抖。
+ */
+const CLICK_TOLERANCE = 3;
+/**
+ * 单击随机切换的状态池。
+ * 不含 idle / react —— 这两者都是正面图，而且鼠标正悬停着，切过去等于没反应；
+ * 其余 5 个状态对应 5 张不同的立绘。
+ */
+const CLICK_STATES: PetState[] = ["remind", "think", "sleep", "celebrate", "drag"];
+/** 随机状态停留多久后自动回到常态 */
+const CLICK_STATE_MS = 3200;
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+function distance(a: Point, b: Point): number {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+/** 取屏幕坐标（窗口会被拖动，用屏幕坐标才稳定） */
+function pointOf(e: PointerEvent): Point {
+  return { x: e.screenX, y: e.screenY };
+}
 
 function PetView() {
   const [meta, setMeta] = useState<PetMeta | null>(null);
@@ -29,42 +54,37 @@ function PetView() {
 
   /** 鼠标是否停在宠物身上 */
   const hovered = useRef(false);
-  /** 停手回 idle 的计时器 */
-  const settleTimer = useRef(0);
+  /** 随机状态停留的计时器 */
+  const stateTimer = useRef(0);
+  /** 上一次随机到的状态，避免连续两次相同 */
+  const lastPicked = useRef<PetState | null>(null);
+  /** 按下时的屏幕坐标；null 表示当前没有按下 */
+  const pressOrigin = useRef<Point | null>(null);
+  /** 本次按下是否已经交棒给系统拖拽 */
+  const dragging = useRef(false);
 
-  const backToIdle = useCallback(() => {
-    // 鼠标还压在宠物上时回到 hover 态，避免立绘忽然掉下来
-    setState((s) => (s === "drag" ? (hovered.current ? "react" : "idle") : s));
-  }, []);
+  /** 常态：鼠标还停在宠物上就用 hover 态，避免立绘忽然掉下来 */
+  const restState = useCallback((): PetState => (hovered.current ? "react" : "idle"), []);
+
+  /** 左键单击：随机切一个状态，停留几秒后自己回到常态 */
+  const playRandomState = useCallback(() => {
+    const pool = CLICK_STATES.filter((s) => s !== lastPicked.current);
+    const next = pool[Math.floor(Math.random() * pool.length)] ?? "celebrate";
+    lastPicked.current = next;
+
+    window.clearTimeout(stateTimer.current);
+    setState(next);
+    stateTimer.current = window.setTimeout(() => {
+      // 期间如果被提醒抢走了状态，就不要覆盖
+      setState((s) => (s === next ? restState() : s));
+    }, CLICK_STATE_MS);
+  }, [restState]);
 
   useEffect(() => {
     loadPetMeta()
       .then(setMeta)
       .catch((err) => console.error("[pet] 元数据加载失败", err));
   }, []);
-
-  // 拖拽期间切到 side 立绘，窗口停止移动后回到 idle。
-  // 关键：Moved 只有窗口真的位移时才会派发，单击（按下即抬起、位置没变）
-  // 根本不会有这个事件，所以立绘不会被卡在侧面。
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-
-    appWindow
-      .onMoved(() => {
-        window.clearTimeout(settleTimer.current);
-        setState("drag");
-        settleTimer.current = window.setTimeout(backToIdle, DRAG_SETTLE_MS);
-      })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch(() => undefined);
-
-    return () => {
-      window.clearTimeout(settleTimer.current);
-      unlisten?.();
-    };
-  }, [backToIdle]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -92,17 +112,50 @@ function PetView() {
     };
   }, []);
 
-  const handleMouseDown = useCallback(async (e: MouseEvent) => {
+  useEffect(() => () => window.clearTimeout(stateTimer.current), []);
+
+  const handlePointerDown = useCallback((e: PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
-    // 这里不切立绘：只负责把窗口交给系统拖动。
-    // 立绘由 Moved 事件驱动，避免"点一下就变侧面"。
-    try {
-      await appWindow.startDragging();
-    } catch (err) {
+    // 只记下起点，不动状态、也不立刻开始拖拽
+    pressOrigin.current = pointOf(e);
+    dragging.current = false;
+    // 抓住指针：光标冲出这 176px 小窗口后，move / up 事件仍然能收到
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, []);
+
+  const handlePointerMove = useCallback((e: PointerEvent<HTMLDivElement>) => {
+    const origin = pressOrigin.current;
+    if (!origin || dragging.current) return;
+    // 越过容差 = 这是拖拽，把窗口交给系统跟随光标；
+    // 之后不再参与单击判定，状态也保持原样
+    if (distance(origin, pointOf(e)) <= CLICK_TOLERANCE) return;
+    dragging.current = true;
+    appWindow.startDragging().catch((err) => {
       console.error("[pet] 拖拽启动失败", err);
-      backToIdle();
-    }
-  }, [backToIdle]);
+      dragging.current = false;
+    });
+  }, []);
+
+  const handlePointerUp = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      const origin = pressOrigin.current;
+      pressOrigin.current = null;
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      // 拖拽过：位置变了但状态不变，直接收工
+      if (!origin || dragging.current) return;
+      // 抬起位置和按下位置不一致，说明手在拖，不当作单击
+      if (distance(origin, pointOf(e)) > CLICK_TOLERANCE) return;
+      playRandomState();
+    },
+    [playRandomState],
+  );
+
+  const handlePointerCancel = useCallback(() => {
+    pressOrigin.current = null;
+    dragging.current = false;
+  }, []);
 
   return (
     <div
@@ -116,7 +169,13 @@ function PetView() {
         setState((s) => (s === "react" ? "idle" : s));
       }}
     >
-      <div className="pet-hit" onMouseDown={handleMouseDown}>
+      <div
+        className="pet-hit"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerCancel}
+      >
         <Pet state={state} meta={meta} />
       </div>
     </div>
