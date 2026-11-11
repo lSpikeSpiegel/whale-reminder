@@ -67,6 +67,17 @@ jobs:
       - name: 同步版本号
         run: node tools/set-version.mjs ${{ steps.ver.outputs.version }}
 
+      # 没有私钥时构建会在打包后才失败，浪费十几分钟，这里提前拦一下
+      - name: 检查签名密钥
+        shell: bash
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "::error::仓库缺少 TAURI_SIGNING_PRIVATE_KEY，无法为更新包签名。请到 Settings → Secrets and variables → Actions 添加。"
+            exit 1
+          fi
+
       - name: 构建并发布
         uses: tauri-apps/tauri-action@v0
         env:
