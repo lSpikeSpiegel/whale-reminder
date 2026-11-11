@@ -1,0 +1,78 @@
+.pet {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-origin: 50% 100%;
+  transition: transform 250ms ease;
+}
+
+/* 鼠标移入时轻微上浮 */
+.pet--react {
+  transform: translateY(-4px);
+}
+
+.pet__breathe {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+  animation: pet-breathe 4s ease-in-out infinite;
+  will-change: transform;
+}
+
+.pet--sleep .pet__breathe {
+  animation: pet-breathe-slow 8s ease-in-out infinite;
+}
+
+.pet__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.pet__img--out {
+  animation: pet-fade-out 180ms ease forwards;
+}
+
+/* 眨眼：用一条深蓝色短横模拟闭合眼线 */
+.pet__eye {
+  position: absolute;
+  display: block;
+  background: #19234c;
+  border-radius: 999px;
+  pointer-events: none;
+  transition: opacity 90ms linear;
+}
+
+@keyframes pet-breathe {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.015) translateY(-2px);
+  }
+}
+
+@keyframes pet-breathe-slow {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.008) translateY(-1px);
+  }
+}
+
+@keyframes pet-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}

@@ -1,0 +1,87 @@
+name: Release
+
+# 推 v* tag 即发版；也可以在 Actions 页面手动填版本号触发。
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号，例如 0.2.0（不用带 v）"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: 构建并发布 Windows 安装包
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 解析版本号
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RAW="${{ inputs.version }}"
+          else
+            RAW="${{ github.ref_name }}"
+          fi
+          VERSION="${RAW#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "本次发布版本：$VERSION"
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+
+      # Tauri 的 release profile 开了 lto，冷编译要十几分钟，缓存能把重复发版压到几分钟
+      - name: 缓存 Rust 依赖
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 同步版本号
+        run: node tools/set-version.mjs ${{ steps.ver.outputs.version }}
+
+      - name: 构建并发布
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 自动更新靠这对密钥：私钥签名，公钥内置在 tauri.conf.json 里校验
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: v${{ steps.ver.outputs.version }}
+          releaseName: "Whale Reminder v__VERSION__"
+          releaseBody: |
+            桌面宠物待办提醒 v${{ steps.ver.outputs.version }}。
+
+            下载 `Whale Reminder_*_x64-setup.exe` 安装；已装旧版本的话应用会自己提示更新。
+          # 必须是正式发布（非 draft），否则 updater 的 /releases/latest 拿不到 latest.json
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true

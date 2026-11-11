@@ -1,0 +1,65 @@
+.bubble {
+  margin: 8px;
+  padding: 12px 14px 14px;
+  background: #fbfbfc;
+  border: 1px solid #dfe0eb;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(25, 35, 76, 0.12);
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  animation: bubble-in 180ms ease;
+}
+
+@keyframes bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.bubble__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #19234c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bubble__meta {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  color: #37447d;
+}
+
+.bubble__actions {
+  display: flex;
+  gap: 8px;
+}
+
+.bubble__btn {
+  flex: 1;
+  height: 30px;
+  padding: 0 4px;
+  border: 1px solid #355cb6;
+  border-radius: 9px;
+  background: transparent;
+  color: #355cb6;
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.bubble__btn--primary {
+  background: #355cb6;
+  color: #ffffff;
+}
+
+.bubble__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

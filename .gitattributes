@@ -1,0 +1,9 @@
+# 统一换行符，避免 Windows 本地与 Linux CI 之间来回改写整个文件
+* text=auto eol=lf
+
+# 二进制资源不参与换行转换
+*.png binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.exe binary
