@@ -58,6 +58,7 @@
 - [x] M4 MCP：`--mcp` 分流 + 8 个工具 + stdio 握手验证
 - [x] M5 追问：按截止倒推的追问计划 + 三按钮回答 + 连续拖延自动降级
 - [x] M6 打磨：无边框面板、开机自启、NSIS 打包
+- [x] M7 分发：GitHub Actions 自动发版 + 应用内检查/下载/安装更新
 
 ---
 
@@ -157,6 +158,78 @@ pnpm tauri build
 NSIS 安装包，双击安装。首次运行会自动注册开机自启（之后可在托盘菜单里关掉）。
 
 > 开发模式下自启注册的是 `target\debug\whale-reminder.exe`。如果装过安装版却发现自启指向 debug 路径，删掉 `%APPDATA%\com.whalereminder.app\.autostart-initialized` 再启动一次即可重新注册。
+
+> 因为开了 `createUpdaterArtifacts`，本地 `tauri build` 也需要签名密钥。本机已把用户环境变量 `TAURI_SIGNING_PRIVATE_KEY` 指向 `C:\Users\<你>\.tauri\whale-reminder.key`（新开终端才生效）。换机器时重新设一次即可，密钥本身不入库。
+
+---
+
+## 自动更新
+
+应用内置 Tauri Updater，更新包从本仓库的 GitHub Releases 拉取。
+
+### 用户侧体验
+
+| 时机 | 行为 |
+|---|---|
+| 面板打开 | 自动检查一次，6 小时内不重复请求 |
+| 托盘右键 →「检查更新」 | 强制检查，同时把面板叫出来 |
+| 发现新版 | 面板顶部出现横幅，点「更新」开始下载，带进度条 |
+| 下载完成 | NSIS 静默安装（`installMode: "passive"`），装完自动拉起新版本 |
+
+### 实现位置
+
+| 位置 | 作用 |
+|---|---|
+| `src-tauri/tauri.conf.json` → `plugins.updater` | 更新源 URL + 公钥 + Windows 安装模式 |
+| `src/panel/useUpdater.ts` | 检查 / 下载 / 安装的状态机 |
+| `src/panel/UpdateBanner.tsx` | 横幅 UI |
+| `src-tauri/src/tray.rs` | 托盘菜单项，向面板 emit `update://check` |
+
+检查逻辑放在前端：updater 的 JS API 能直接拿到下载进度，不用在前后端之间同步状态。
+
+### 签名密钥
+
+更新包必须签名，公钥内置在 `tauri.conf.json`，私钥只留在本机和 GitHub Secrets：
+
+| 变量 | 本地 | CI |
+|---|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | 私钥**路径**（用户环境变量） | 私钥**内容**（Secrets） |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 空 | 空 |
+
+私钥在 `C:\Users\<你>\.tauri\whale-reminder.key`。**丢了就只能让老用户手动重装一次**，务必备份；泄露则任何人都能给你推送假更新，务必不要提交。
+
+本地重新配置（新机器 / 换路径）：
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+  "TAURI_SIGNING_PRIVATE_KEY",
+  "C:\Users\<你>\.tauri\whale-reminder.key",
+  "User"
+)
+```
+
+---
+
+## 发版
+
+```bash
+pnpm version:set 0.2.0          # 同步 package.json / tauri.conf.json / Cargo.toml
+git commit -am "chore: 0.2.0"
+git tag v0.2.0
+git push && git push origin v0.2.0
+```
+
+推 tag 后 `.github/workflows/release.yml` 在 `windows-latest` 上构建并发布 Release：
+
+| 产物 | 说明 |
+|---|---|
+| `Whale Reminder_0.2.0_x64-setup.exe` | 安装包 |
+| `..._x64-setup.exe.sig` | 更新包签名 |
+| `latest.json` | 更新清单，应用据此判断有没有新版 |
+
+也可以在 Actions 页面手动 Run workflow 并填版本号（会补打同名 tag）。
+
+> 首次发版前，在仓库 Settings → Secrets and variables → Actions 配好 `TAURI_SIGNING_PRIVATE_KEY`（私钥文件里那一行 base64 全文）和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（本项目为空，可留空）。Release 必须是正式发布而非 draft，否则 `/releases/latest/download/latest.json` 取不到。
 
 ---
 
