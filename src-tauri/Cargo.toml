@@ -1,6 +1,6 @@
 [package]
 name = "whale-reminder"
-version = "0.1.0"
+version = "0.1.1"
 description = "鲸鱼娘桌宠待办提醒"
 authors = ["you"]
 edition = "2024"
