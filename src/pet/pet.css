@@ -3,12 +3,24 @@
   width: 100%;
   height: 100%;
   transform-origin: 50% 100%;
-  transition: transform 250ms ease;
+  /* 拖拽倾斜 + 贴边镜像都走这两个变量，避免和关键帧动画抢 transform */
+  transform: rotate(var(--tilt, 0deg)) scaleX(var(--flip, 1));
+  transition: transform 260ms cubic-bezier(0.22, 0.9, 0.3, 1.15);
+  will-change: transform;
 }
 
-/* 鼠标移入时轻微上浮 */
-.pet--react {
-  transform: translateY(-4px);
+/* 拖拽过程中要跟手，不能有过渡 */
+.pet--drag {
+  transition: none;
+}
+
+/* 落地回弹的载体层。
+   动画不写在这里：它由 `Pet.tsx` 用 Web Animations 播，因为重播必须不重挂子树
+   （里面是 Live2D 画布，重挂一次就等于重载模型）。这里只留定位和变换原点。 */
+.pet__land {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
 }
 
 .pet__breathe {
@@ -17,10 +29,6 @@
   transform-origin: 50% 100%;
   animation: pet-breathe 4s ease-in-out infinite;
   will-change: transform;
-}
-
-.pet--sleep .pet__breathe {
-  animation: pet-breathe-slow 8s ease-in-out infinite;
 }
 
 .pet__img {
@@ -38,15 +46,166 @@
   animation: pet-fade-out 180ms ease forwards;
 }
 
-/* 眨眼：用一条深蓝色短横模拟闭合眼线 */
-.pet__eye {
+/* 腮红：摸头 / 撒欢时浮出来 */
+.pet__blush {
   position: absolute;
   display: block;
-  background: #19234c;
   border-radius: 999px;
+  background: radial-gradient(circle, rgba(245, 139, 168, 0.72), rgba(245, 139, 168, 0));
   pointer-events: none;
-  transition: opacity 90ms linear;
+  animation: pet-blush-in 260ms ease;
 }
+
+/* ------------------------------------------------------------ 动作动效 */
+
+/* 鼠标移入：轻轻上浮 */
+.pet--react .pet__breathe {
+  animation: none;
+  transform: translateY(-4px);
+  transition: transform 220ms ease;
+}
+
+/* 摸头：被按住那样往下一沉，然后软软地回弹 */
+.pet--pat .pet__breathe {
+  animation: pet-pat 900ms ease-in-out;
+}
+
+/* 戳一戳：左右晃两下 */
+.pet--poke .pet__breathe {
+  animation: pet-wiggle 320ms ease-in-out 2;
+}
+
+/* 撒欢：蹦两下 */
+.pet--happy .pet__breathe {
+  animation: pet-hop 620ms cubic-bezier(0.3, 0.8, 0.4, 1) 2;
+}
+
+/* 沉思：慢慢摇，像在想事情 */
+.pet--think .pet__breathe {
+  animation: pet-sway 6.4s ease-in-out infinite;
+}
+
+/* 摸鱼：更慢更懒的晃 */
+.pet--slack .pet__breathe {
+  animation: pet-sway-slow 9s ease-in-out infinite;
+}
+
+/* 发呆：呼吸放到最慢 */
+.pet--daydream .pet__breathe {
+  animation: pet-breathe-slow 7s ease-in-out infinite;
+}
+
+/* 无聊：整个人塌下去一点 */
+.pet--bored .pet__breathe {
+  animation: pet-slump 8s ease-in-out infinite;
+}
+
+/* 打瞌睡：一点一点地点头 */
+.pet--doze .pet__breathe {
+  animation: pet-nod 3.4s ease-in-out infinite;
+}
+
+/* 深睡：慢呼吸 */
+.pet--sleep .pet__breathe {
+  animation: pet-breathe-slow 8s ease-in-out infinite;
+}
+
+/* 干活：小幅高频抖动，像笔尖在动 */
+.pet--work .pet__breathe {
+  animation: pet-typing 900ms ease-in-out infinite;
+}
+
+/* 吃东西：一口一口 */
+.pet--eat .pet__breathe {
+  animation: pet-chew 460ms ease-in-out infinite;
+}
+
+/* 拖动中：交给倾斜逻辑，不做呼吸 */
+.pet--drag .pet__breathe {
+  animation: none;
+}
+
+/* 动态立绘：呼吸由模型自己算（ParamBreath + 物理），这层再动就是两套呼吸叠在一起 */
+.pet--live .pet__breathe {
+  animation: none;
+}
+
+/* 生气：气得发抖 */
+.pet--angry .pet__breathe {
+  animation: pet-anger 320ms ease-in-out 2;
+}
+
+/* 得意：慢悠悠地晃 */
+.pet--smug .pet__breathe {
+  animation: pet-sway 3.2s ease-in-out infinite;
+}
+
+/* 委屈：往下沉一点，来回蹭 */
+.pet--sad .pet__breathe {
+  animation: pet-sulk 3s ease-in-out infinite;
+}
+
+/* 贴边：靠墙站着就不该再上下浮，否则会穿模 */
+.pet--docked .pet__breathe {
+  animation: none;
+}
+
+.pet--docked.pet--doze .pet__breathe {
+  animation: pet-nod 3.4s ease-in-out infinite;
+}
+
+.pet--docked.pet--sleep .pet__breathe {
+  animation: pet-breathe-slow 8s ease-in-out infinite;
+}
+
+/* 生气是「被戳出来的」，贴着边也得抖，否则点下去没反馈 */
+.pet--docked.pet--angry .pet__breathe {
+  animation: pet-anger 320ms ease-in-out 2;
+}
+
+.pet--peek .pet__breathe {
+  animation: none;
+}
+
+/* ------------------------------------------------------------ 粒子层 */
+
+.fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.fx__heart {
+  position: absolute;
+  line-height: 1;
+  font-family: "Segoe UI Symbol", system-ui, sans-serif;
+  opacity: 0;
+  animation: fx-heart 1300ms ease-out forwards;
+}
+
+.fx__z {
+  position: absolute;
+  font-weight: 700;
+  color: #6f8fd8;
+  opacity: 0;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.85);
+  animation: fx-z 2.4s ease-in-out infinite;
+}
+
+.fx--zzz-deep .fx__z {
+  animation-duration: 3.6s;
+}
+
+.fx__spark {
+  position: absolute;
+  color: #c9a227;
+  font-size: 12px;
+  opacity: 0;
+  animation: fx-spark 900ms ease-out 2;
+}
+
+/* ------------------------------------------------------------ keyframes */
 
 @keyframes pet-breathe {
   0%,
@@ -68,11 +227,220 @@
   }
 }
 
+@keyframes pet-pat {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  18% {
+    transform: translateY(3px) scale(1.03, 0.97);
+  }
+  46% {
+    transform: translateY(-2px) scale(0.985, 1.02);
+  }
+  72% {
+    transform: translateY(1px) scale(1.008, 0.994);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pet-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg) translateX(0);
+  }
+  30% {
+    transform: rotate(-2deg) translateX(-3px);
+  }
+  70% {
+    transform: rotate(2deg) translateX(3px);
+  }
+}
+
+@keyframes pet-hop {
+  0% {
+    transform: translateY(0) scale(1);
+  }
+  22% {
+    transform: translateY(1px) scale(1.06, 0.94);
+  }
+  55% {
+    transform: translateY(-13px) scale(0.97, 1.05);
+  }
+  82% {
+    transform: translateY(0) scale(1.04, 0.96);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pet-sway {
+  0%,
+  100% {
+    transform: rotate(-1.2deg) translateY(0);
+  }
+  50% {
+    transform: rotate(1.2deg) translateY(-1px);
+  }
+}
+
+@keyframes pet-sway-slow {
+  0%,
+  100% {
+    transform: rotate(-1.6deg) translateY(0) scale(1);
+  }
+  50% {
+    transform: rotate(1.6deg) translateY(-1px) scale(1.006);
+  }
+}
+
+@keyframes pet-slump {
+  0%,
+  100% {
+    transform: translateY(2px) rotate(-0.8deg);
+  }
+  50% {
+    transform: translateY(3px) rotate(0.8deg);
+  }
+}
+
+@keyframes pet-nod {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  38% {
+    transform: translateY(3px) rotate(-1.4deg);
+  }
+  54% {
+    transform: translateY(5px) rotate(-2deg);
+  }
+  74% {
+    transform: translateY(0) rotate(0deg);
+  }
+}
+
+@keyframes pet-typing {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(0.8px, -0.6px);
+  }
+  50% {
+    transform: translate(-0.6px, 0.4px);
+  }
+  75% {
+    transform: translate(0.5px, 0.6px);
+  }
+}
+
+@keyframes pet-chew {
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+  50% {
+    transform: scale(1.018, 0.988) translateY(1px);
+  }
+}
+
+@keyframes pet-anger {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(-2.5px) rotate(-1.2deg);
+  }
+  75% {
+    transform: translateX(2.5px) rotate(1.2deg);
+  }
+}
+
+@keyframes pet-sulk {
+  0%,
+  100% {
+    transform: translateY(2px) rotate(-0.6deg);
+  }
+  50% {
+    transform: translateY(3px) rotate(0.6deg);
+  }
+}
+
 @keyframes pet-fade-out {
   from {
     opacity: 1;
   }
   to {
     opacity: 0;
+  }
+}
+
+@keyframes pet-blush-in {
+  from {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes fx-heart {
+  0% {
+    opacity: 0;
+    transform: translate(0, 6px) scale(0.5);
+  }
+  18% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--drift, 0px), -46px) scale(1.05);
+  }
+}
+
+@keyframes fx-z {
+  0% {
+    opacity: 0;
+    transform: translate(0, 4px) scale(0.7);
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(8px, -22px) scale(1.15);
+  }
+}
+
+@keyframes fx-spark {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(0deg);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1) rotate(35deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.5) rotate(70deg);
+  }
+}
+
+/* 系统开了「减少动态效果」就全部收敛，别让人晕。
+   落地回弹不在这张表里：它由 JS 播（见 Pet.tsx），那边自己判断同一条件。 */
+@media (prefers-reduced-motion: reduce) {
+  .pet__breathe,
+  .fx__heart,
+  .fx__z,
+  .fx__spark {
+    animation: none !important;
   }
 }

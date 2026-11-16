@@ -51,6 +51,8 @@ struct CreateTaskInput {
     description: Option<String>,
     /// ISO 8601 UTC，例如 2026-11-12T02:00:00Z（北京时间减 8 小时）
     due_at: Option<String>,
+    /// 计划开始时间，ISO 8601 UTC。传了会在开始时刻准点提醒一次。
+    start_at: Option<String>,
     /// 0 低 / 1 普通 / 2 高 / 3 紧急
     priority: Option<i64>,
     estimate_min: Option<i64>,
@@ -167,12 +169,15 @@ impl WhaleServer {
             title: input.title,
             description: input.description.unwrap_or_default(),
             due_at: input.due_at,
+            start_at: input.start_at,
             priority: input.priority,
             estimate_min: input.estimate_min,
             tags: input.tags.unwrap_or_default(),
             source: Some("ai".to_string()),
             remind_offsets: input.remind_offsets,
             ask_progress: input.ask_progress,
+            // 循环提醒目前只有面板能配，AI 侧暂不开放
+            recur: None,
         };
         let created = self.run(|conn| task::create(conn, new_task))?;
 

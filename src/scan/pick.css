@@ -1,0 +1,126 @@
+/* 吸管浮层：冻结的桌面截图 + 十字线 + 放大镜。
+ *
+ * 这一层不能压暗——用户就是来取「屏幕上真实的那个颜色」的，
+ * 遮一层半透明黑会让所有读数都偏。
+ */
+
+.pick {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  /* 系统箭头会挡住要取的那一个像素，位置由十字线和放大镜代替 */
+  cursor: none;
+  user-select: none;
+  font-family: var(--font);
+  color: var(--on-scrim);
+}
+
+.pick__shot {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* 只读像素，不显示 */
+.pick__probe {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 十字线：白线 + 一圈暗描边，深浅底色上都看得见 */
+.pick__cross {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.pick__cross--v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.pick__cross--h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+/* 放大镜：圆形取景 + 下面挂一行色值 */
+.pick__loupe {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.pick__canvas {
+  display: block;
+  width: 120px;
+  height: 120px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  background: #ffffff;
+  /* 画布已经是整数倍放大，这里再关一次平滑，边缘才不糊 */
+  image-rendering: pixelated;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.35),
+    0 6px 18px rgba(0, 0, 0, 0.32);
+}
+
+.pick__hex {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--scrim-solid);
+  color: var(--on-scrim);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- 顶部提示 */
+
+.pick__hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100vw - 48px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--scrim-solid);
+  color: var(--on-scrim);
+  font-size: 12.5px;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.pick__hint-dim {
+  color: var(--on-scrim-dim);
+}
+
+.pick__kbd {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--on-scrim);
+  font-family: var(--font);
+  font-size: 10px;
+  line-height: 1;
+}

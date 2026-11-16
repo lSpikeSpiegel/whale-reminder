@@ -1,0 +1,22 @@
+/* Live2D 画布：和静态立绘占同一个盒子，外面那层壳（land / breathe / 粒子）照旧 */
+
+.live2d {
+  position: absolute;
+  inset: 0;
+  /* 指针事件要放行：摸头 / 拖拽都由外层 .pet-hit 接管，这里只负责接 mousemove 算注视 */
+  pointer-events: none;
+}
+
+.live2d__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* 模型加载完再淡入，否则先闪一块空白画布 */
+  opacity: 0;
+  transition: opacity 320ms ease;
+  pointer-events: none;
+}
+
+.live2d__canvas--on {
+  opacity: 1;
+}

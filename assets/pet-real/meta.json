@@ -1,0 +1,30 @@
+{
+  "canvas": 680,
+  "displaySize": 340,
+  "poses": {
+    "front": {
+      "file": "front.webp"
+    },
+    "blush": {
+      "file": "blush.webp"
+    },
+    "heart": {
+      "file": "heart.webp"
+    },
+    "dizzy": {
+      "file": "dizzy.webp"
+    },
+    "squint": {
+      "file": "squint.webp"
+    },
+    "gloom": {
+      "file": "gloom.webp"
+    },
+    "smug": {
+      "file": "smug.webp"
+    },
+    "tears": {
+      "file": "tears.webp"
+    }
+  }
+}

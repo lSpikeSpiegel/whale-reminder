@@ -29,11 +29,14 @@ WEBP_QUALITY = 88
 ALPHA_THRESHOLD = 16  # 低于此 alpha 视为透明，用于算包围盒
 PAD_RATIO = 0.03      # 每边留白比例，给呼吸缩放（1.0→1.03）留余量，避免被窗口裁切
 
-# 原仓库 Program.cs 中 Pose 的归一化眼睛参数（相对原图宽高）
-# 仅 front / side 有有效值，其余状态不做眨眼
-EYE_PARAMS = {
-    "front": dict(eye_y=0.495, eye_h=0.075, eye_w=0.150, left_x=0.265, right_x=0.625),
-    "side":  dict(eye_y=0.495, eye_h=0.075, eye_w=0.120, left_x=0.300, right_x=0.560),
+# 眼睛坐标直接标在 352 画布上（工具按网格量出来的）。
+#
+# 不要用原仓库 Program.cs 里的归一化参数——那套值对不上处理后的立绘：
+# 按它画出来的闭眼线会落在她的下巴上。侧脸只能看到一只眼睛，左右坐标相同，
+# 前端见到 `single` 就只画一条。
+EYE_BOXES = {
+    "front": dict(y=143.0, h=38.0, w=40.0, left=149.0, right=197.0),
+    "side": dict(y=141.0, h=38.0, w=32.0, left=104.0, right=104.0, single=True),
 }
 
 POSES = [
@@ -95,24 +98,18 @@ def process(src_dir, out_dir):
             "sourceBBox": [bx, by, br, bb],
         }
 
-        # 把归一化眼睛坐标映射到新画布
-        if name in EYE_PARAMS:
-            p = EYE_PARAMS[name]
-            sx, sy = nw / cw, nh / ch
-
-            def map_x(nx):
-                return round(ox + (nx * ow - bx) * sx, 2)
-
-            def map_y(ny):
-                return round(oy + (ny * oh - by) * sy, 2)
-
+        # 眼睛坐标是画布坐标系，直接写进 meta
+        if name in EYE_BOXES:
+            p = EYE_BOXES[name]
             entry["eyes"] = {
-                "y": map_y(p["eye_y"]),
-                "height": round(p["eye_h"] * oh * sy, 2),
-                "width": round(p["eye_w"] * ow * sx, 2),
-                "leftX": map_x(p["left_x"]),
-                "rightX": map_x(p["right_x"]),
+                "y": p["y"],
+                "height": p["h"],
+                "width": p["w"],
+                "leftX": p["left"],
+                "rightX": p["right"],
             }
+            if p.get("single"):
+                entry["eyes"]["single"] = True
 
         meta["poses"][name] = entry
         print(f"  {name:12s} bbox={cw}x{ch} -> {nw}x{nh} @({ox},{oy})  {size_kb:6.1f} KB")

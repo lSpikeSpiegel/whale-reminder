@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -65,7 +66,17 @@ export function useUpdater() {
     }
   }, []);
 
-  // 面板在启动时就已经创建（只是隐藏着），这里检查一次就等于启动自检
+  // 面板每次打开都是新窗口，挂载后先问一句：托盘是不是点过「检查更新」？
+  // 那种情况下窗口是现建的，事件发出去还没人监听，只能由这边主动来取。
+  useEffect(() => {
+    void invoke<boolean>("take_pending_check")
+      .then((pending) => {
+        if (pending) void run(true);
+      })
+      .catch(() => {});
+  }, [run]);
+
+  // 面板每次打开都是重新加载的，这里顺带当启动自检；节流是为了别把 GitHub 当接口刷
   useEffect(() => {
     if (import.meta.env.DEV) return;
     const last = Number(localStorage.getItem(LAST_CHECK_KEY) ?? 0);

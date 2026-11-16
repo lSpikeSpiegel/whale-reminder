@@ -1,0 +1,878 @@
+/* 小工具页：工具清单 + 工具详情 + 最近识别。
+ *
+ * 清单只做入口（一行一个工具），具体内容收在各自的详情页里——
+ * 工具越加越多时，清单行高不变，详情页各管各的高度。
+ */
+
+.tools__pane {
+  animation: tools-pane-in 150ms var(--ease) both;
+}
+
+/* 只用 opacity：带位移的话 fit() 会量到动画中间态，窗口高度要来回抖 */
+@keyframes tools-pane-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---------------------------------------------------------------- 工具清单 */
+
+.tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 整行可点：图标 + 名称说明 + 右侧箭头 */
+.tools__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 0.18s var(--spring),
+    box-shadow 0.18s var(--ease);
+}
+
+.tools__item:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+.tools__item:active {
+  transform: scale(0.99);
+}
+
+.tools__item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.tools__icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.tools__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tools__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tools__desc {
+  color: var(--ink-4);
+  font-size: 10.5px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools__go {
+  flex: none;
+  color: var(--ink-4);
+  transition:
+    transform 0.18s var(--spring),
+    color 0.18s var(--ease);
+}
+
+.tools__item:hover .tools__go {
+  transform: translateX(2px);
+  color: var(--brand);
+}
+
+/* 详情页左上角的返回。做小做淡——它是退路，不该和工具里的主操作抢视线 */
+.tools__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 0 9px -4px;
+  padding: 3px 8px 3px 5px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font);
+  font-size: 11px;
+  cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.tools__back:hover {
+  background: var(--surface-2);
+  color: var(--brand);
+}
+
+.tools__back:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* ---------------------------------------------------------------- 工具卡片 */
+
+.tool {
+  margin: 0 0 12px;
+  padding: 11px 12px 12px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+}
+
+/* 还没实现的工具：一颗「待开发」胶囊 + 一句打算做成什么样。
+   居中留白，看着像「空房间」而不是「加载失败」。 */
+.soon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  margin-top: 4px;
+  padding: 26px 18px 28px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  text-align: center;
+}
+
+.soon__badge {
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+.soon__note {
+  margin: 0;
+  max-width: 260px;
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.tool__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+/* 图标底：淡品牌色方块，和导航选中态一个口径 */
+.tool__icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--r-md);
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.tool__intro {
+  min-width: 0;
+}
+
+.tool__name {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tool__desc {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.tool__foot {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 11px;
+}
+
+.tool__start {
+  flex: none;
+}
+
+/* 说明文字会被「已复制」这类反馈临时顶掉，所以留够宽度并允许省略 */
+.tool__hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 清空：平时是弱化的文字按钮，点第一下变成红色警示 */
+.tool__clear {
+  margin-left: auto;
+  padding: 3px 7px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.tool__clear:hover {
+  background: var(--surface-3);
+  color: var(--ink-2);
+}
+
+.tool__clear--armed,
+.tool__clear--armed:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ---------------------------------------------------------------- 文字转二维码 */
+
+/* 输入框 + 生成按钮一行。输入框复用待办页那个 .composer__input，
+   高度 36 和主按钮对齐，两处长得一样用户才不用重新认。 */
+.tool__row {
+  display: flex;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.tool__gen {
+  flex: none;
+  height: 36px;
+  padding: 0 14px;
+}
+
+/* 预览 + 右侧动作。二维码用 150 见方：再大就把最近记录挤没了，
+   再小手机离远了扫不出来。 */
+.qr {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 11px;
+  animation: qr-in 220ms var(--spring) both;
+}
+
+@keyframes qr-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* canvas 按模块整数倍绘制（8px/模块），缩到 150 用最近邻，边缘才不糊 */
+.qr__canvas {
+  flex: none;
+  width: 150px;
+  height: 150px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    var(--shadow-1);
+  image-rendering: pixelated;
+}
+
+.qr__side {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+/* 「收起」是退路，弱化成文字按钮，别和两个正经动作抢位置 */
+.qr__drop {
+  justify-content: flex-start;
+  padding: 0 8px;
+  color: var(--ink-3);
+}
+
+.qr__drop:hover:not(:disabled) {
+  color: var(--brand);
+}
+
+/* 生成结果 / 保存路径这类一句话反馈 */
+.tool__note {
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------- 颜色转换 */
+
+.color__preview {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+/* 色块：内描边把纯白也框住，否则白卡上会「消失」 */
+.color__swatch {
+  flex: none;
+  width: 54px;
+  height: 54px;
+  border-radius: var(--r-md);
+  box-shadow: inset 0 0 0 1px rgba(22, 32, 63, 0.12);
+}
+
+.color__values {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 一行一种格式，整行可点即复制——比放三个复制按钮省地方 */
+.color__value {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 20px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+
+.color__value:hover {
+  background: var(--surface-2);
+}
+
+.color__key {
+  flex: none;
+  width: 22px;
+  color: var(--ink-4);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.color__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 「复制」只在悬停时露出来，平时不占视线 */
+.color__copy {
+  flex: none;
+  color: var(--ink-4);
+  font-size: 10px;
+  opacity: 0;
+  transition: opacity 0.14s var(--ease);
+}
+
+.color__value:hover .color__copy {
+  opacity: 1;
+}
+
+/* 吸管：图标 + 两个字，比纯图标按钮好认（「取色」是动作，一眼知道点了会发生什么） */
+.color__pick {
+  flex: none;
+  height: 36px;
+  padding: 0 11px;
+}
+
+.color__note {
+  margin: 8px 0 0;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.color__label {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.color__sv {
+  position: relative;
+  height: 96px;
+  border-radius: var(--r-md);
+  cursor: crosshair;
+  /* 拖动时别让浏览器抢去做滚动/缩放手势 */
+  touch-action: none;
+  box-shadow: inset 0 0 0 1px rgba(22, 32, 63, 0.12);
+}
+
+/* 手柄：白圈 + 一圈暗描边，压在纯白和纯黑上都看得见 */
+.color__sv-dot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(22, 32, 63, 0.45);
+  pointer-events: none;
+}
+
+.color__hue {
+  position: relative;
+  height: 12px;
+  margin-top: 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  touch-action: none;
+  box-shadow: inset 0 0 0 1px rgba(22, 32, 63, 0.1);
+}
+
+.color__hue-dot {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 18px;
+  margin: -9px 0 0 -7px;
+  border: 2px solid #ffffff;
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 1px rgba(22, 32, 63, 0.35),
+    0 1px 3px rgba(22, 32, 63, 0.25);
+  pointer-events: none;
+}
+
+.color__history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.color__chip {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(22, 32, 63, 0.14);
+  cursor: pointer;
+  transition:
+    transform 0.14s var(--spring),
+    box-shadow 0.14s var(--ease);
+}
+
+.color__chip:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 0 0 1px rgba(22, 32, 63, 0.14),
+    var(--shadow-2);
+}
+
+/* 当前色：外面套一圈白再套一圈品牌色，深浅底色上都看得清 */
+.color__chip--on {
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 3px var(--brand);
+}
+
+.color__empty {
+  margin: 0 4px;
+  padding: 14px 0 4px;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- 识别记录 */
+.tool__list {
+  flex: 1;
+  margin: 0;
+  padding: 0 0 4px;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.scan-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 4px 6px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition:
+    transform 0.18s var(--spring),
+    box-shadow 0.18s var(--ease);
+}
+
+.scan-row:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+/* 整行可点：点哪儿都是复制 */
+.scan-row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.scan-row__format {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 10px;
+  line-height: 15px;
+}
+
+.scan-row__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 12.5px;
+}
+
+.scan-row__at {
+  flex: none;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 删除按钮只在悬停时露出来，和待办列表一个手感 */
+.scan-row__del {
+  flex: none;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.16s var(--ease),
+    color 0.16s var(--ease),
+    background 0.16s var(--ease);
+}
+
+.scan-row:hover .scan-row__del {
+  opacity: 1;
+}
+
+.scan-row__del:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ---------------------------------------------------------------- 编解码 */
+
+/* 格式胶囊一行摆五个，窗口再窄就换行——别挤成两行半 */
+.codec__formats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 输入框手写：原生 textarea 的默认内边距和字体跟面板对不上，
+   高度也写死——让它跟着内容长高会把下面的结果顶出窗口 */
+.codec__input {
+  display: block;
+  width: 100%;
+  height: 78px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 12.5px;
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+  transition:
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+
+.codec__input::placeholder {
+  color: var(--ink-4);
+}
+
+.codec__input:focus {
+  border-color: var(--brand-2);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 方向胶囊在左、两个图标按钮靠右：中间的空档把「这是什么」和「能做什么」分开 */
+.codec__bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.codec__dir {
+  display: flex;
+  gap: 4px;
+}
+
+.codec__acts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.codec__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    transform 0.16s var(--spring),
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.codec__icon:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--brand);
+}
+
+.codec__icon:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.codec__icon:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.codec__icon:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 结果区：内描边 + 浅底，读起来像「输出窗口」而不是又一张卡片 */
+.codec__out {
+  margin-top: 10px;
+  padding: 9px 10px;
+  max-height: 148px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow-y: auto;
+}
+
+.codec__out--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+}
+
+.codec__placeholder {
+  margin: 0;
+  color: var(--ink-4);
+  font-size: 11px;
+  text-align: center;
+}
+
+.codec__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+/* 整块可点即复制——和颜色页的三行数值一个手感 */
+.codec__result {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 12.5px;
+  line-height: 1.6;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+
+.codec__result:hover {
+  background: var(--surface-3);
+}
+
+/* 换行和超长串都要看得见：Base64 和转义串经常是一整行没有空格 */
+.codec__text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.codec__copy {
+  flex: none;
+  color: var(--ink-4);
+  font-size: 10px;
+  opacity: 0;
+  transition: opacity 0.14s var(--ease);
+}
+
+.codec__result:hover .codec__copy {
+  opacity: 1;
+}
+
+/* 时间戳的附加读数：秒 / 毫秒 / UTC，一行一个 */
+.codec__rows {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+}
+
+.codec__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 22px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+
+.codec__row:hover {
+  background: var(--surface-3);
+}
+
+.codec__row-key {
+  flex: none;
+  width: 30px;
+  color: var(--ink-4);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.codec__row-val {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 平时是这一格式的注意事项，复制成功后临时被反馈顶掉 */
+.codec__hint {
+  margin: 9px 0 0;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.codec__hint--note {
+  color: var(--brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codec__input,
+  .codec__icon,
+  .codec__result,
+  .codec__row,
+  .scan-row {
+    transition-duration: 1ms;
+  }
+}

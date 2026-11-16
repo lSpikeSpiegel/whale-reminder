@@ -1,79 +1,290 @@
+/* 待办面板：左侧导航 + 内容区，冷白底 + 玻璃卡片 + 弹性微交互 */
+
 .panel {
   display: flex;
-  flex-direction: column;
+  /* 左边导航、右边内容，两个方向都在这一层定死 */
+  flex-direction: row;
   margin: 8px;
   width: calc(100vw - 16px);
   height: calc(100vh - 16px);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(25, 35, 76, 0.18);
+  border: 1px solid rgba(22, 32, 63, 0.09);
+  border-radius: var(--r-xl);
   overflow: hidden;
-  background: #fbfbfc;
-  color: #19234c;
-  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: var(--ink);
+  font-family: var(--font);
+  /* 顶部一团淡蓝光晕，让纯白不那么平 */
+  background:
+    radial-gradient(120% 70% at 50% -18%, rgba(91, 141, 239, 0.18), transparent 62%),
+    linear-gradient(180deg, #fdfdff, #f4f6fd 55%, #eef1fa);
+  /* 只留内侧高光。窗口是透明的，外投影会被 8px 边距裁成一条灰带，
+     看起来像蒙在面板周围的半透明膜——宁可不要。 */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
+
+.panel__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------------------------------------------------------------- 左侧导航 */
+
+.rail {
+  flex: none;
+  width: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 14px 0 10px;
+  /* 靠底色分层，不用描边；只在右侧留一条极淡的分割线 */
+  border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(230, 236, 249, 0.7));
+}
+
+/* 原来标题前那颗呼吸圆点，现在当应用标记放在导航顶上 */
+.rail__mark {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin: 2px 0 12px;
+  border-radius: 50%;
+  background: linear-gradient(140deg, var(--brand-3), var(--brand));
+  box-shadow: 0 0 0 4px rgba(53, 92, 182, 0.12);
+  animation: dot-breathe 3.6s var(--ease) infinite;
+}
+
+.rail__item {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 46px;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font);
+  cursor: pointer;
+  transition:
+    background 0.18s var(--ease),
+    color 0.18s var(--ease),
+    transform 0.14s var(--spring);
+}
+
+/* 图标外面套一层只为了挂红点，不参与布局尺寸 */
+.rail__icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 「有没做完的」提示。只给红点不给数字——数量在列表头，导航里再写一遍太吵。
+   2px 白圈把点从图标描边上摘出来，压在选中态的淡蓝底上也干净。 */
+.rail__dot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.95);
+}
+
+.rail__label {
+  font-size: 10.5px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.rail__item:hover {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.rail__item:active {
+  transform: scale(0.95);
+}
+
+.rail__item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.rail__item--on {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.rail__item--on:hover {
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+/* 选中项左侧那根小竖条。往回收 1px 是必须的：rail 的内容盒紧贴面板 1px 描边，
+   原来 left:-8px 正好压在描边上，看起来像条被切掉一半的蓝色缺口。
+   现在离面板边 2px、离图标 4px，两端圆角，读起来才是「指示条」而不是「瑕疵」。 */
+.rail__item--on::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  margin-top: -8px;
+  border-radius: 3px;
+  background: var(--brand);
+}
+
+/* 导航下方留白：既能拖动窗口，也不至于让图标飘在中间 */
+.rail__gap {
+  flex: 1;
+  width: 100%;
+}
+
+/* ---------------------------------------------------------------- 页面容器 */
+
+/**
+ * 三个页面的外层。切页时 key 变了会重挂载，这里的淡入就重放一次。
+ *
+ * 必须自己撑成 flex 列：待办页的列表是 flex:1，隔着这层拿不到高度会塌成 0。
+ * 动画只用 opacity——带位移或缩放的话，fit() 量高度时会读到动画中间态，
+ * 窗口高度得来回收敛好几次。
+ */
+.page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: page-fade 150ms var(--ease) both;
+}
+
+@keyframes page-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 设置页这类没有列表的页面，用这个当滚动容器 */
+.page__body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 16px 12px;
+  overflow-y: auto;
+}
+
+/* ---------------------------------------------------------------- 头部 */
 
 .panel__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 20px 20px 12px;
+  gap: 10px;
+  padding: 16px 16px 12px;
   cursor: move;
+}
+
+.panel__brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+/* 一颗会呼吸的小圆点（现在在左侧导航顶部，见 .rail__mark） */
+@keyframes dot-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 4px rgba(53, 92, 182, 0.12);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(53, 92, 182, 0.06);
+  }
+}
+
+.panel__titles {
+  min-width: 0;
 }
 
 .panel__title {
   margin: 0;
   font-size: 15px;
-  font-weight: 500;
-  color: #19234c;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  /* 工具名可能比较长，别把关闭按钮挤出去 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel__stat {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: #37447d;
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: var(--ink-3);
 }
 
 .panel__stat--alert {
-  color: #a32d2d;
+  color: var(--danger);
 }
 
 .panel__close {
-  width: 28px;
-  height: 28px;
+  flex: none;
+  width: 26px;
+  height: 26px;
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: #919dc6;
-  font-size: 20px;
+  color: var(--ink-3);
+  font-size: 18px;
   line-height: 1;
   cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease),
+    transform 0.14s var(--spring);
 }
 
 .panel__close:hover {
-  background: #dfe0eb;
-  color: #19234c;
+  background: var(--surface-3);
+  color: var(--ink);
 }
 
-/* 更新横幅：只在检查中 / 有新版 / 出错时出现 */
+.panel__close:active {
+  transform: scale(0.9);
+}
+
+/* ---------------------------------------------------------------- 更新横幅 */
+
 .update {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 20px 12px;
-  padding: 10px 12px;
-  border: 1px solid #b9d4f2;
-  border-radius: 10px;
-  background: #eef5fd;
+  margin: 0 16px 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(91, 141, 239, 0.35);
+  border-radius: var(--r-md);
+  background: rgba(91, 141, 239, 0.09);
 }
 
 .update--muted {
-  border-color: #dfe0eb;
-  background: #f4f5f9;
+  border-color: var(--line);
+  background: var(--surface-2);
 }
 
 .update--error {
-  border-color: #f09595;
-  background: #fcebeb;
+  border-color: rgba(179, 64, 58, 0.35);
+  background: var(--danger-soft);
 }
 
 .update__body {
@@ -85,17 +296,17 @@
 }
 
 .update__text {
-  font-size: 12px;
-  color: #19234c;
+  font-size: 11.5px;
+  color: var(--ink);
 }
 
 .update--error .update__text {
-  color: #a32d2d;
+  color: var(--danger);
 }
 
 .update__notes {
   font-size: 11px;
-  color: #37447d;
+  color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -103,135 +314,325 @@
 
 .update__action {
   flex: none;
-  height: 26px;
-  padding: 0 12px;
+  height: 25px;
+  padding: 0 11px;
   border: none;
-  border-radius: 8px;
-  background: #355cb6;
+  border-radius: 999px;
+  background: linear-gradient(145deg, var(--brand-2), var(--brand));
   color: #ffffff;
-  font-size: 12px;
+  font-family: var(--font);
+  font-size: 11.5px;
   font-weight: 500;
   cursor: pointer;
 }
 
-.update__action:hover {
-  background: #4b8bdc;
-}
-
 .update__close {
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: 21px;
+  height: 21px;
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #919dc6;
-  font-size: 15px;
+  color: var(--ink-3);
+  font-size: 14px;
   line-height: 1;
   cursor: pointer;
 }
 
 .update__close:hover {
-  background: #dfe0eb;
-  color: #19234c;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--ink);
 }
 
 .update__bar {
-  height: 4px;
+  height: 3px;
   border-radius: 2px;
-  background: #dfe0eb;
+  background: rgba(53, 92, 182, 0.16);
   overflow: hidden;
 }
 
 .update__bar-fill {
   height: 100%;
-  background: #355cb6;
-  transition: width 0.2s ease;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--brand-3), var(--brand));
+  transition: width 0.25s var(--ease);
 }
 
-.panel__add {
+/* ---------------------------------------------------------------- 输入区 */
+
+.composer {
   display: flex;
   gap: 8px;
-  padding: 0 20px 12px;
+  margin: 0 16px 12px;
 }
 
-.panel__input {
+.composer__input {
   flex: 1;
+  min-width: 0;
   height: 36px;
   padding: 0 12px;
-  border: 1px solid #dfe0eb;
-  border-radius: 10px;
-  background: #ffffff;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font);
   font-size: 13px;
-  color: #19234c;
   outline: none;
+  transition:
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
 }
 
-.panel__input:focus {
-  border-color: #355cb6;
+.composer__input::placeholder {
+  color: var(--ink-4);
 }
 
-.panel__submit {
+.composer__input:focus {
+  border-color: var(--brand-2);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.composer__add {
+  flex: none;
   height: 36px;
   padding: 0 16px;
-  border: none;
-  border-radius: 10px;
-  background: #355cb6;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
 }
 
-.panel__submit:hover {
-  background: #4b8bdc;
+/* ---------------------------------------------------------------- 提醒设置 */
+
+.card {
+  margin: 0 16px 10px;
+  padding: 5px;
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(
+        145deg,
+        rgba(255, 255, 255, 0.95),
+        rgba(53, 92, 182, 0.2) 48%,
+        rgba(255, 255, 255, 0.7)
+      )
+      border-box;
+  box-shadow: var(--shadow-1);
 }
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: var(--r-md);
+  transition: background 0.16s var(--ease);
+}
+
+.option:hover {
+  background: var(--surface-2);
+}
+
+/* 开关的文字：整块可点，省得在窄面板里瞄准小圆点 */
+.option__label {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.16s var(--ease);
+}
+
+.option__label:hover {
+  color: var(--brand);
+}
+
+/* 设置页里有些行只有说明文字、点不动，别给指针和悬停变色 */
+.option__label--static,
+.option__label--static:hover {
+  cursor: default;
+  color: var(--ink-2);
+}
+
+/* 展开出来的内容：快捷胶囊、星期、时刻 */
+.option--sub {
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 9px 8px 51px;
+}
+
+.option--sub:hover {
+  background: transparent;
+}
+
+.option__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-left: auto;
+}
+
+.option--sub .option__chips {
+  margin-left: 0;
+}
+
+.option__hint {
+  flex: 1;
+  color: var(--ink-4);
+  font-size: 11px;
+}
+
+.chip--day {
+  width: 24px;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------- 列表 */
 
 .panel__error {
-  margin: 0 20px 10px;
-  padding: 8px 12px;
-  border-radius: 8px;
-  background: #fcebeb;
-  color: #a32d2d;
-  font-size: 12px;
+  margin: 0 16px 10px;
+  padding: 8px 11px;
+  border-radius: var(--r-md);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 11.5px;
+}
+
+.list-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 18px 6px;
+}
+
+.list-head__title {
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.list-head__count {
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--ink-3);
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+
+/* 列表头的补充说明，靠右（历史页的「近 7 天 3」） */
+.list-head__hint {
+  margin-left: auto;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .panel__list {
   flex: 1;
   margin: 0;
-  padding: 0 12px 16px;
+  padding: 0 12px 12px;
   list-style: none;
   overflow-y: auto;
+}
+
+.panel__list::-webkit-scrollbar,
+.page__body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panel__list::-webkit-scrollbar-track,
+.page__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel__list::-webkit-scrollbar-button,
+.page__body::-webkit-scrollbar-button {
+  display: none;
+}
+
+.panel__list::-webkit-scrollbar-thumb,
+.page__body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(22, 32, 63, 0.14);
+}
+
+.panel__list::-webkit-scrollbar-thumb:hover,
+.page__body::-webkit-scrollbar-thumb:hover {
+  background: rgba(22, 32, 63, 0.26);
 }
 
 .task {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 0 8px 6px;
-  padding: 10px 12px;
-  border: 1px solid #dfe0eb;
-  border-radius: 12px;
-  background: #ffffff;
+  margin: 0 4px 6px;
+  padding: 9px 11px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  animation: task-in 260ms var(--spring) backwards;
+  transition:
+    transform 0.18s var(--spring),
+    box-shadow 0.18s var(--ease);
+}
+
+.task:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+@keyframes task-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .task--overdue {
-  border-color: #f09595;
+  box-shadow:
+    inset 0 0 0 1px rgba(179, 64, 58, 0.24),
+    var(--shadow-1);
 }
 
+/* 圆圈勾选：悬停才显出对勾，点下去变实心 */
 .task__check {
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 18px;
   height: 18px;
-  border: 1.5px solid #919dc6;
+  border: 1.5px solid var(--ink-4);
   border-radius: 50%;
   background: transparent;
+  color: transparent;
   cursor: pointer;
+  transition:
+    background 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease),
+    transform 0.16s var(--spring);
 }
 
 .task__check:hover {
-  border-color: #355cb6;
-  background: #e6f1fb;
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.task__check:active {
+  transform: scale(0.85);
 }
 
 .task__body {
@@ -244,7 +645,7 @@
 
 .task__title {
   font-size: 13px;
-  color: #19234c;
+  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -252,21 +653,38 @@
 
 .task__meta {
   font-size: 11px;
-  color: #37447d;
+  color: var(--ink-3);
+}
+
+.task__badge {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 10px;
+  line-height: 15px;
 }
 
 .task--overdue .task__meta {
-  color: #a32d2d;
+  color: var(--danger);
 }
 
 .task__del {
   flex: none;
+  padding: 3px 6px;
   border: none;
+  border-radius: 6px;
   background: transparent;
-  color: #919dc6;
+  color: var(--ink-4);
+  font-family: var(--font);
   font-size: 11px;
   cursor: pointer;
   opacity: 0;
+  transition:
+    opacity 0.16s var(--ease),
+    color 0.16s var(--ease),
+    background 0.16s var(--ease);
 }
 
 .task:hover .task__del {
@@ -274,18 +692,31 @@
 }
 
 .task__del:hover {
-  color: #a32d2d;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .panel__empty {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  margin: 0;
-  color: #919dc6;
-  font-size: 13px;
-  line-height: 1.8;
+  gap: 4px;
+  padding: 26px 0 22px;
+  color: var(--ink-3);
+  font-size: 12.5px;
   text-align: center;
+}
+
+.panel__empty span {
+  color: var(--ink-4);
+  font-size: 11px;
+}
+
+/* 关掉系统动效的人，只保留颜色变化——进场和淡入全部取消 */
+@media (prefers-reduced-motion: reduce) {
+  .page,
+  .task,
+  .rail__mark {
+    animation: none;
+  }
 }

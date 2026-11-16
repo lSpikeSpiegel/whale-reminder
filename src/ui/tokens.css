@@ -1,0 +1,271 @@
+/* ---------------------------------------------------------------- 设计令牌
+ *
+ * 视觉语言参考 React Bits 那套「玻璃 + 高光边 + 弹性微交互」，
+ * 但按桌宠的浅色调重做了一版：底色是冷白，强调色沿用鲸鱼娘的 #355CB6。
+ *
+ * 所有面板 / 气泡的样式都只从这里的变量取值，改主题只要改这一段。
+ */
+
+/* ---------------------------------------------------------------- 基础 */
+
+/* 统一 border-box：面板和浮层的宽度都是算好的，content-box 会让 1px 边框和
+   内边距额外撑出去，浮层于是被窗口右边切掉一截。 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:root {
+  /* 文字 */
+  --ink: #16203f;
+  --ink-2: #4a5680;
+  --ink-3: #8b96b8;
+  --ink-4: #aab3cd;
+
+  /* 品牌色 */
+  --brand: #355cb6;
+  --brand-2: #5b8def;
+  --brand-3: #8fb4ff;
+  --brand-soft: rgba(53, 92, 182, 0.1);
+  --brand-ring: rgba(53, 92, 182, 0.16);
+
+  /* 语义色 */
+  --danger: #b3403a;
+  --danger-soft: rgba(179, 64, 58, 0.09);
+  --warn: #b07d20;
+
+  /* 面 */
+  --surface: #ffffff;
+  --surface-2: #f4f6fd;
+  --surface-3: #eaeefa;
+  --line: rgba(22, 32, 63, 0.08);
+  --line-2: rgba(22, 32, 63, 0.14);
+
+  /* 圆角 */
+  --r-xl: 20px;
+  --r-lg: 14px;
+  --r-md: 10px;
+  --r-sm: 8px;
+
+  /* 阴影：三层叠出「浮起来」的层次，不用纯黑 */
+  --shadow-1: 0 1px 2px rgba(22, 32, 63, 0.06);
+  --shadow-2: 0 6px 18px rgba(22, 32, 63, 0.09);
+  /* --shadow-3 只给不透明容器用（模态、抽屉）。透明窗口里用它会被窗口边距
+     裁成一条灰带，看起来像蒙在卡片周围的半透明膜——别用。 */
+  --shadow-3: 0 20px 52px rgba(22, 32, 63, 0.2);
+
+  /* 缓动：弹性用于「落位」，标准用于「变色」 */
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* 扫码浮层。这层不跟冷白主题走——它压的是用户的桌面截图，
+     只有暗色遮罩才看得清框选边界，白底会糊成一片。
+     `--scrim` 挖洞用，`--scrim-solid` 给提示胶囊当底。 */
+  --scrim: rgba(9, 13, 24, 0.45);
+  --scrim-solid: rgba(17, 23, 38, 0.92);
+  --on-scrim: rgba(255, 255, 255, 0.94);
+  --on-scrim-dim: rgba(255, 255, 255, 0.55);
+
+  --font: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+/* ---------------------------------------------------------------- 通用按钮 */
+
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 0.16s var(--spring),
+    background 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+
+.ui-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* 按下时缩一下，松开弹回——比单纯变色更有手感 */
+.ui-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.ui-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ui-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.ui-btn--primary {
+  background: linear-gradient(150deg, var(--brand-2), var(--brand) 78%);
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 4px 12px rgba(53, 92, 182, 0.28);
+}
+
+.ui-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(150deg, #6a99f5, var(--brand-2) 78%);
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 6px 18px rgba(53, 92, 182, 0.36);
+}
+
+.ui-btn--ghost {
+  border-color: var(--line-2);
+  background: var(--surface);
+}
+
+/* ---------------------------------------------------------------- 玻璃卡片
+ *
+ * 高光边：两条背景，一条铺 padding-box 当填充，一条铺 border-box 当描边，
+ * 描边自带从左上到右下的明暗过渡，看起来像一块磨过的玻璃。
+ */
+
+.ui-glass {
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(var(--surface), var(--surface)) padding-box,
+    linear-gradient(
+        145deg,
+        rgba(255, 255, 255, 0.95),
+        rgba(53, 92, 182, 0.22) 46%,
+        rgba(255, 255, 255, 0.7)
+      )
+      border-box;
+  box-shadow: var(--shadow-1);
+}
+
+/* ---------------------------------------------------------------- 弹性开关 */
+
+.switch {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #dde3f2;
+  box-shadow: inset 0 1px 2px rgba(22, 32, 63, 0.14);
+  cursor: pointer;
+  transition:
+    background 0.3s var(--ease),
+    box-shadow 0.3s var(--ease);
+}
+
+.switch__thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow:
+    0 1px 3px rgba(22, 32, 63, 0.28),
+    0 0 0 0.5px rgba(22, 32, 63, 0.06);
+  /* 位移走弹簧，宽度走短缓动：按下时被「挤扁」，松开弹回去 */
+  transition:
+    transform 0.38s var(--spring),
+    width 0.18s var(--ease);
+}
+
+.switch--on {
+  background: linear-gradient(135deg, var(--brand-2), var(--brand));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 2px 8px rgba(53, 92, 182, 0.32);
+}
+
+.switch--on .switch__thumb {
+  transform: translateX(14px);
+}
+
+.switch:active .switch__thumb {
+  width: 18px;
+}
+
+.switch--on:active .switch__thumb {
+  transform: translateX(10px);
+}
+
+.switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* ---------------------------------------------------------------- 小胶囊 */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--font);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 0.14s var(--spring),
+    background 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease);
+}
+
+.chip:hover {
+  border-color: var(--brand-3);
+  color: var(--brand);
+}
+
+.chip:active {
+  transform: scale(0.94);
+}
+
+.chip--on {
+  border-color: transparent;
+  background: linear-gradient(140deg, var(--brand-2), var(--brand));
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(53, 92, 182, 0.26);
+}
+
+.chip--on:hover {
+  color: #ffffff;
+}
+
+/* 系统开了「减少动态效果」就只保留必要的过渡 */
+@media (prefers-reduced-motion: reduce) {
+  .ui-btn,
+  .switch,
+  .switch__thumb,
+  .chip {
+    transition-duration: 1ms;
+  }
+}

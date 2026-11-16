@@ -4,8 +4,10 @@ use serde::Deserialize;
 use super::{reminder, Task, TaskFilter};
 use crate::db::{new_id, now_iso};
 use crate::error::{AppError, AppResult};
+use crate::recur::RecurRule;
+use crate::sync::{self, Entity};
 
-const COLUMNS: &str = "id, title, description, status, priority, due_at, started_at, \
+const COLUMNS: &str = "id, title, description, status, priority, due_at, start_at, started_at, \
                        completed_at, estimate_min, tags, source, created_at, updated_at";
 
 fn row_to_task(row: &Row<'_>) -> rusqlite::Result<Task> {
@@ -17,6 +19,7 @@ fn row_to_task(row: &Row<'_>) -> rusqlite::Result<Task> {
         status: row.get("status")?,
         priority: row.get("priority")?,
         due_at: row.get("due_at")?,
+        start_at: row.get("start_at")?,
         started_at: row.get("started_at")?,
         completed_at: row.get("completed_at")?,
         estimate_min: row.get("estimate_min")?,
@@ -82,13 +85,22 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Task> {
     Ok(task)
 }
 
+/// 新建待办的入参。
+///
+/// **字段名一律 snake_case**：这条边界上的另一端是 `invoke("create_task", { input })`，
+/// 前端发的就是 `start_at` / `due_at` / `remind_offsets`，与 `Task` 序列化回前端的形状一致。
+/// 曾经这里挂过 `#[serde(rename_all = "camelCase")]`，serde 默认忽略未知字段，
+/// 于是 `start_at` 被静默丢弃、变成 None，待办存进去却没有开始时间——不报错，最难查。
+/// 现在用 `deny_unknown_fields` 把这类拼写不一致直接变成一条明确的报错。
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct NewTask {
     pub title: String,
     #[serde(default)]
     pub description: String,
     pub due_at: Option<String>,
+    /// 计划开始时间。传了就在这个点提醒一次（「开始时提醒」）。
+    pub start_at: Option<String>,
     pub priority: Option<i64>,
     pub estimate_min: Option<i64>,
     #[serde(default)]
@@ -98,6 +110,8 @@ pub struct NewTask {
     pub remind_offsets: Option<Vec<i64>>,
     /// 是否开启定时追问，默认开启
     pub ask_progress: Option<bool>,
+    /// 循环提醒规则（每天 / 每周 / 工作日 / 节假日），不传表示不循环
+    pub recur: Option<RecurRule>,
 }
 
 pub fn create(conn: &Connection, input: NewTask) -> AppResult<Task> {
@@ -115,43 +129,60 @@ pub fn create(conn: &Connection, input: NewTask) -> AppResult<Task> {
     let tags = serde_json::to_string(&input.tags).unwrap_or_else(|_| "[]".into());
     let source = input.source.unwrap_or_else(|| "manual".into());
 
-    conn.execute(
-        &format!(
-            "INSERT INTO task ({COLUMNS})
-             VALUES (?1, ?2, ?3, 'todo', ?4, ?5, NULL, NULL, ?6, ?7, ?8, ?9, ?9)"
-        ),
-        params![
-            id,
-            title,
-            input.description,
-            priority,
-            input.due_at,
-            input.estimate_min,
-            tags,
-            source,
-            now
-        ],
-    )?;
+    // 待办和它的一串提醒必须一起落库：拆开写会出现「任务建好了但提醒没建」，
+    // 而用户看到的只是「这个任务怎么不提醒我」。
+    sync::mutate(conn, Entity::Task, &id, |tx| {
+        tx.execute(
+            &format!(
+                "INSERT INTO task ({COLUMNS})
+                 VALUES (?1, ?2, ?3, 'todo', ?4, ?5, ?6, NULL, NULL, ?7, ?8, ?9, ?10, ?10)"
+            ),
+            params![
+                id,
+                title,
+                input.description,
+                priority,
+                input.due_at,
+                input.start_at,
+                input.estimate_min,
+                tags,
+                source,
+                now
+            ],
+        )?;
 
-    if let Some(due) = input.due_at.as_deref() {
-        match input.remind_offsets.as_deref() {
-            // 显式传空数组 = 用户不想被提醒
-            Some([]) => {}
-            offsets => {
-                reminder::create_for_due(conn, &id, due, offsets)?;
+        // 开始时提醒：准点一次。打上 origin 标记，气泡才知道该给「已开始」而不是「已完成」
+        if let Some(start) = input.start_at.as_deref() {
+            reminder::create_at(tx, &id, "notify", start, Some(reminder::ORIGIN_START))?;
+        }
+
+        if let Some(due) = input.due_at.as_deref() {
+            match input.remind_offsets.as_deref() {
+                // 显式传空数组 = 用户不想被提醒
+                Some([]) => {}
+                offsets => {
+                    reminder::create_for_due(tx, &id, due, offsets)?;
+                }
+            }
+
+            if input.ask_progress.unwrap_or(true) {
+                reminder::create_progress_checks(tx, &id, due, chrono::Utc::now())?;
             }
         }
 
-        if input.ask_progress.unwrap_or(true) {
-            reminder::create_progress_checks(conn, &id, due, chrono::Utc::now())?;
+        // 循环提醒：与开始/结束时间互相独立，可以同时存在
+        if let Some(rule) = input.recur.as_ref().filter(|r| r.is_recurring()) {
+            reminder::create_recurring(tx, &id, rule)?;
         }
-    }
+
+        Ok(())
+    })?;
 
     get(conn, &id)
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(deny_unknown_fields)]
 pub struct TaskPatch {
     pub title: Option<String>,
     pub description: Option<String>,
@@ -188,8 +219,9 @@ pub fn update(conn: &Connection, id: &str, patch: TaskPatch) -> AppResult<Task> 
         .as_ref()
         .and_then(|t| serde_json::to_string(t).ok());
 
-    conn.execute(
-        "UPDATE task SET
+    sync::mutate(conn, Entity::Task, id, |tx| {
+        tx.execute(
+            "UPDATE task SET
            title       = COALESCE(?2, title),
            description = COALESCE(?3, description),
            due_at      = CASE WHEN ?4 = 1 THEN NULL ELSE COALESCE(?5, due_at) END,
@@ -199,50 +231,55 @@ pub fn update(conn: &Connection, id: &str, patch: TaskPatch) -> AppResult<Task> 
            started_at  = CASE WHEN ?7 = 'doing' AND started_at IS NULL THEN ?9 ELSE started_at END,
            updated_at  = ?9
          WHERE id = ?1 AND deleted_at IS NULL",
-        params![
-            id,
-            patch.title.map(|t| t.trim().to_string()),
-            patch.description,
-            i64::from(patch.clear_due),
-            patch.due_at,
-            patch.priority.map(|p| p.clamp(0, 3)),
-            patch.status,
-            tags,
-            now
-        ],
-    )?;
+            params![
+                id,
+                patch.title.map(|t| t.trim().to_string()),
+                patch.description,
+                i64::from(patch.clear_due),
+                patch.due_at,
+                patch.priority.map(|p| p.clamp(0, 3)),
+                patch.status,
+                tags,
+                now
+            ],
+        )?;
+        Ok(())
+    })?;
 
     get(conn, id)
 }
 
 /// 标记完成：写 completed_at、关停所有提醒，两个动作必须一致。
 pub fn complete(conn: &Connection, id: &str, note: Option<&str>) -> AppResult<Task> {
-    let now = now_iso();
-
-    let changed = conn.execute(
-        "UPDATE task SET
-           status       = 'done',
-           completed_at = ?2,
-           updated_at   = ?2,
-           description  = CASE
-                            WHEN ?3 IS NULL OR ?3 = '' THEN description
-                            WHEN description = '' THEN ?3
-                            ELSE description || char(10) || ?3
-                          END
-         WHERE id = ?1 AND deleted_at IS NULL AND status != 'done'",
-        params![id, now, note],
-    )?;
-
-    if changed == 0 {
-        // 已经是 done 的重复调用视为幂等成功
-        let task = get(conn, id)?;
-        if task.status == "done" {
-            return Ok(task);
-        }
-        return Err(AppError::NotFound(format!("待办 {id} 不存在")));
+    // 先看状态再动手：已经完成的重复调用直接返回，不进 mutate——
+    // 否则每点一次都会往 outbox 投一条内容完全一样的记录。
+    let current = get(conn, id)?;
+    if current.status == "done" {
+        return Ok(current);
     }
 
-    reminder::stop_all_for_task(conn, id)?;
+    let now = now_iso();
+
+    sync::mutate(conn, Entity::Task, id, |tx| {
+        tx.execute(
+            "UPDATE task SET
+               status       = 'done',
+               completed_at = ?2,
+               updated_at   = ?2,
+               description  = CASE
+                                WHEN ?3 IS NULL OR ?3 = '' THEN description
+                                WHEN description = '' THEN ?3
+                                ELSE description || char(10) || ?3
+                              END
+             WHERE id = ?1 AND deleted_at IS NULL AND status != 'done'",
+            params![id, now, note],
+        )?;
+
+        // 提醒和任务同事务关停，否则可能「任务已完成但气泡还在响」
+        reminder::stop_all_for_task(tx, id)?;
+        Ok(())
+    })?;
+
     get(conn, id)
 }
 
@@ -261,41 +298,46 @@ pub fn answer_progress(conn: &Connection, task_id: &str, answer: &str) -> AppRes
     let _ = get(conn, task_id)?;
     let now = now_iso();
 
-    // 回填最近一条「已问但没答」的记录；找不到就补一条（用户主动回答的场景）
-    let updated = conn.execute(
-        "UPDATE progress_log SET answer = ?2, answered_at = ?3
-         WHERE id = (
-             SELECT id FROM progress_log
-             WHERE task_id = ?1 AND answer IS NULL
-             ORDER BY asked_at DESC LIMIT 1
-         )",
-        params![task_id, answer, now],
-    )?;
-
-    if updated == 0 {
-        conn.execute(
-            "INSERT INTO progress_log (id, task_id, asked_at, answer, answered_at)
-             VALUES (?1, ?2, ?3, ?4, ?3)",
-            params![new_id(), task_id, now, answer],
+    sync::mutate(conn, Entity::Task, task_id, |tx| {
+        // 回填最近一条「已问但没答」的记录；找不到就补一条（用户主动回答的场景）
+        let updated = tx.execute(
+            "UPDATE progress_log SET answer = ?2, answered_at = ?3
+             WHERE id = (
+                 SELECT id FROM progress_log
+                 WHERE task_id = ?1 AND answer IS NULL
+                 ORDER BY asked_at DESC LIMIT 1
+             )",
+            params![task_id, answer, now],
         )?;
-    }
 
-    match answer {
-        "done" => {
-            let _ = complete(conn, task_id, None)?;
+        if updated == 0 {
+            tx.execute(
+                "INSERT INTO progress_log (id, task_id, asked_at, answer, answered_at)
+                 VALUES (?1, ?2, ?3, ?4, ?3)",
+                params![new_id(), task_id, now, answer],
+            )?;
         }
-        "doing" => {
-            let patch = TaskPatch {
-                status: Some("doing".into()),
-                ..Default::default()
-            };
-            let _ = update(conn, task_id, patch)?;
+
+        // 状态变更走各自的老函数：它们内部也走 mutate，靠 with_tx 汇进这一个事务
+        match answer {
+            "done" => {
+                let _ = complete(tx, task_id, None)?;
+            }
+            "doing" => {
+                let patch = TaskPatch {
+                    status: Some("doing".into()),
+                    ..Default::default()
+                };
+                let _ = update(tx, task_id, patch)?;
+            }
+            "not_started" => {
+                maybe_downgrade(tx, task_id)?;
+            }
+            _ => {}
         }
-        "not_started" => {
-            maybe_downgrade(conn, task_id)?;
-        }
-        _ => {}
-    }
+
+        Ok(())
+    })?;
 
     get(conn, task_id)
 }
@@ -325,31 +367,75 @@ fn maybe_downgrade(conn: &Connection, task_id: &str) -> AppResult<()> {
 /// 软删除，30 天内可从库中恢复。
 pub fn delete(conn: &Connection, id: &str) -> AppResult<()> {
     let now = now_iso();
-    let changed = conn.execute(
-        "UPDATE task SET deleted_at = ?2, updated_at = ?2
-         WHERE id = ?1 AND deleted_at IS NULL",
-        params![id, now],
-    )?;
 
-    if changed == 0 {
-        return Err(AppError::NotFound(format!("待办 {id} 不存在")));
+    sync::mutate(conn, Entity::Task, id, |tx| {
+        let changed = tx.execute(
+            "UPDATE task SET deleted_at = ?2, updated_at = ?2
+             WHERE id = ?1 AND deleted_at IS NULL",
+            params![id, now],
+        )?;
+
+        if changed == 0 {
+            // 返回错误会连同事务一起回滚，不会往 outbox 留一条假变更
+            return Err(AppError::NotFound(format!("待办 {id} 不存在")));
+        }
+
+        reminder::stop_all_for_task(tx, id)?;
+        Ok(())
+    })
+}
+
+/// 清空历史：把已完成的待办整体软删。
+///
+/// 走软删（`deleted_at`）而不是 `DELETE`，和单条删除保持一致——误点了还能从库里捞回来。
+/// 已完成的待办理论上没有待触发的提醒，仍然顺手停一遍，免得历史清完还有气泡弹出来。
+pub fn clear_done(conn: &Connection) -> AppResult<usize> {
+    let now = now_iso();
+
+    // 先取 id 再更新：每次批量写都要为「被改动的每一行」各投一条 outbox，
+    // 事后从库里反查是查不出来的（改完之后条件已经不成立了）
+    let ids: Vec<String> = {
+        let mut stmt =
+            conn.prepare("SELECT id FROM task WHERE status = 'done' AND deleted_at IS NULL")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+
+    if ids.is_empty() {
+        return Ok(0);
     }
 
-    reminder::stop_all_for_task(conn, id)?;
-    Ok(())
+    sync::mutate_many(conn, Entity::Task, &ids, |tx| {
+        let changed = tx.execute(
+            "UPDATE task SET deleted_at = ?1, updated_at = ?1
+             WHERE status = 'done' AND deleted_at IS NULL",
+            params![now],
+        )?;
+
+        for id in &ids {
+            reminder::stop_all_for_task(tx, id)?;
+        }
+
+        Ok(changed)
+    })
 }
 
 pub fn reopen(conn: &Connection, id: &str) -> AppResult<Task> {
     let now = now_iso();
-    let changed = conn.execute(
-        "UPDATE task SET status = 'todo', completed_at = NULL, updated_at = ?2
-         WHERE id = ?1 AND deleted_at IS NULL AND status = 'done'",
-        params![id, now],
-    )?;
 
-    if changed == 0 {
-        return Err(AppError::Invalid("只有已完成的任务可以重新打开".into()));
-    }
+    sync::mutate(conn, Entity::Task, id, |tx| {
+        let changed = tx.execute(
+            "UPDATE task SET status = 'todo', completed_at = NULL, updated_at = ?2
+             WHERE id = ?1 AND deleted_at IS NULL AND status = 'done'",
+            params![id, now],
+        )?;
+
+        if changed == 0 {
+            return Err(AppError::Invalid("只有已完成的任务可以重新打开".into()));
+        }
+
+        Ok(())
+    })?;
 
     // 提醒不自动恢复，避免用户刚撤销就又被提醒
     get(conn, id)
@@ -423,12 +509,14 @@ mod tests {
             title: title.into(),
             description: String::new(),
             due_at: None,
+            start_at: None,
             priority: None,
             estimate_min: None,
             tags: vec![],
             source: None,
             remind_offsets: None,
             ask_progress: None,
+            recur: None,
         }
     }
 
@@ -467,8 +555,85 @@ mod tests {
     }
 
     #[test]
-    fn empty_offsets_means_no_reminder() {
+    fn start_at_creates_one_shot_reminder() {
         let conn = mem();
+        let mut input = sample("开会");
+        input.start_at = Some(in_hours(2));
+        let task = create(&conn, input).unwrap();
+
+        assert!(task.start_at.is_some());
+        assert_eq!(
+            task.reminders.iter().filter(|r| r.kind == "notify").count(),
+            1,
+            "开始时间应生成一条准点提醒"
+        );
+    }
+
+    #[test]
+    fn new_task_accepts_the_panel_payload() {
+        // 面板 invoke("create_task", { input }) 发的就是这几个键（snake_case）
+        let raw = r#"{
+            "title": "222",
+            "start_at": "2026-11-12T02:30:00.000Z",
+            "due_at": null,
+            "remind_offsets": null,
+            "recur": null
+        }"#;
+        let input: NewTask = serde_json::from_str(raw).expect("面板的 payload 必须能反序列化");
+        assert!(
+            input.start_at.is_some(),
+            "start_at 被静默丢弃了——字段名和前端对不上"
+        );
+        assert!(input.due_at.is_none());
+    }
+
+    #[test]
+    fn new_task_rejects_misspelled_keys() {
+        // 键名拼错要报错，不能像以前那样静默变成 None
+        let raw = r#"{"title":"x","startAt":"2026-11-12T02:30:00Z"}"#;
+        assert!(serde_json::from_str::<NewTask>(raw).is_err());
+    }
+
+    #[test]
+    fn recurring_rule_creates_repeating_reminder() {
+        let conn = mem();
+        let mut input = sample("每天喝水");
+        input.recur = Some(RecurRule::Daily {
+            time: "09:00".into(),
+        });
+        let task = create(&conn, input).unwrap();
+
+        let recurring: Vec<_> = task
+            .reminders
+            .iter()
+            .filter(|r| r.rule.contains("\"daily\""))
+            .collect();
+        assert_eq!(recurring.len(), 1);
+        assert_eq!(recurring[0].state, "pending");
+    }
+
+    #[test]
+    fn start_and_due_and_recur_can_coexist() {
+        let conn = mem();
+        let mut input = sample("三个开关全开");
+        input.start_at = Some(in_hours(1));
+        input.due_at = Some(in_hours(3));
+        input.remind_offsets = Some(vec![0]);
+        input.recur = Some(RecurRule::Workday {
+            time: "09:00".into(),
+        });
+        let task = create(&conn, input).unwrap();
+
+        // 1 条开始 + 1 条准点结束 + 3 条追问 + 1 条循环
+        assert_eq!(
+            task.reminders.iter().filter(|r| r.kind == "notify").count(),
+            3
+        );
+        assert_eq!(task.reminders.iter().filter(|r| r.kind == "ask").count(), 3);
+    }
+
+    #[test]
+    fn empty_offsets_means_no_reminder() {        let conn = mem();
         let mut input = sample("不提醒");
         input.due_at = Some(in_hours(2));
         input.remind_offsets = Some(vec![]);

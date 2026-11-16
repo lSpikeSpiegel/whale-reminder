@@ -1,0 +1,329 @@
+/* 框选浮层：铺满一块屏幕的截图 + 暗色遮罩 + 结果卡。
+ *
+ * 和面板不一样，这一层是「截图上的工具」，所以用暗色遮罩（--scrim）、
+ * 白色描边和准星；结果卡回到冷白玻璃那套，和面板里看到的是同一种东西。
+ */
+
+.scan {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  cursor: crosshair;
+  user-select: none;
+  font-family: var(--font);
+  color: var(--on-scrim);
+}
+
+/* 出结果以后不该再显示准星光标 */
+.scan--idle {
+  cursor: default;
+}
+
+/* 底图：窗口尺寸和截图比例一致，直接拉满，不留任何透明边 */
+.scan__shot {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* 遮罩挖洞：元素本身铺在框的位置、透明，靠 100vmax 的外扩阴影把四周压暗 */
+.scan__shade {
+  position: absolute;
+  pointer-events: none;
+  box-shadow: 0 0 0 100vmax var(--scrim);
+}
+
+/* 还没框的时候没有洞，整屏压暗 */
+.scan__shade--full {
+  inset: 0;
+  background: var(--scrim);
+  box-shadow: none;
+}
+
+.scan__sel {
+  position: absolute;
+  pointer-events: none;
+  /* 内侧一圈白线压住截图的杂色，外面一圈淡蓝把它从遮罩里提出来 */
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.92),
+    0 0 0 1px rgba(53, 92, 182, 0.6);
+}
+
+/* 四个角上的短直角，比整圈描边更利落 */
+.scan__corner {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #ffffff;
+}
+
+.scan__corner--tl {
+  top: -1px;
+  left: -1px;
+  border-right: none;
+  border-bottom: none;
+  border-top-left-radius: 3px;
+}
+
+.scan__corner--tr {
+  top: -1px;
+  right: -1px;
+  border-left: none;
+  border-bottom: none;
+  border-top-right-radius: 3px;
+}
+
+.scan__corner--bl {
+  bottom: -1px;
+  left: -1px;
+  border-right: none;
+  border-top: none;
+  border-bottom-left-radius: 3px;
+}
+
+.scan__corner--br {
+  bottom: -1px;
+  right: -1px;
+  border-left: none;
+  border-top: none;
+  border-bottom-right-radius: 3px;
+}
+
+/* 尺寸标：贴框内侧，不占额外空间，也不会被窗口边裁掉 */
+.scan__size {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--scrim-solid);
+  color: var(--on-scrim);
+  font-size: 10.5px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 准星：只在还没按下时出现，帮用户对齐边角 */
+.scan__cross {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.45);
+  pointer-events: none;
+}
+
+.scan__cross--v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.scan__cross--h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+/* ---------------------------------------------------------------- 顶部提示 */
+
+.scan__hint {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100vw - 48px);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--scrim-solid);
+  color: var(--on-scrim);
+  font-size: 12.5px;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  animation: scan-hint-in 180ms var(--ease) both;
+}
+
+.scan__hint-dim {
+  color: var(--on-scrim-dim);
+}
+
+.scan__kbd {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--on-scrim);
+  font-family: var(--font);
+  font-size: 10px;
+  line-height: 1;
+}
+
+/* 识别中的小转圈：一圈淡环 + 一段亮弧 */
+.scan__spin {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.28);
+  border-top-color: #ffffff;
+  animation: scan-spin 0.7s linear infinite;
+}
+
+@keyframes scan-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes scan-hint-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ---------------------------------------------------------------- 结果卡 */
+
+.scan__card {
+  position: absolute;
+  padding: 10px 12px 11px;
+  border: 1px solid rgba(22, 32, 63, 0.1);
+  border-radius: var(--r-lg);
+  color: var(--ink);
+  background:
+    radial-gradient(120% 70% at 50% -20%, rgba(91, 141, 239, 0.16), transparent 60%),
+    linear-gradient(180deg, #fdfdff, #f2f5fc);
+  /* 浮层铺满整块屏幕，投影不会被窗口边裁掉，这里可以放心用大外投影 */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    var(--shadow-3);
+  animation: scan-card-in 200ms var(--spring) both;
+}
+
+@keyframes scan-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.scan__card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.scan__format {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+/* 没认出来的时候别再用品牌色——那颗蓝胶囊会读成「一切正常」 */
+.scan__format--fail {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.scan__close {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.scan__close:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+/* 识别结果：长网址要能换行，而且必须能选中——复制失败时用户还能手动来 */
+.scan__text {
+  margin: 0;
+  max-height: 92px;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.5;
+  word-break: break-all;
+  overflow-y: auto;
+  user-select: text;
+  cursor: text;
+}
+
+.scan__fail {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: var(--r-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.scan__note {
+  margin: 7px 0 0;
+  color: var(--ink-3);
+  font-size: 11px;
+}
+
+.scan__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* 「重新框选」是退路，压到最右边、弱化处理，别和复制抢视线 */
+.scan__again {
+  margin-left: auto;
+  padding: 0 8px;
+  color: var(--ink-3);
+}
+
+.scan__again:hover:not(:disabled) {
+  color: var(--brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan__card,
+  .scan__hint {
+    animation: none;
+  }
+
+  .scan__spin {
+    animation-duration: 2s;
+  }
+}

@@ -1,65 +1,228 @@
+/* 气泡：和面板同一套玻璃语言，但更小更轻 */
+
+html,
+body,
+#root {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
 .bubble {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin: 8px;
-  padding: 12px 14px 14px;
-  background: #fbfbfc;
-  border: 1px solid #dfe0eb;
-  border-radius: 16px;
-  box-shadow: 0 4px 16px rgba(25, 35, 76, 0.12);
-  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-  animation: bubble-in 180ms ease;
+  padding: 11px 13px 12px;
+  border: 1px solid rgba(22, 32, 63, 0.09);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(110% 80% at 50% -20%, rgba(91, 141, 239, 0.14), transparent 60%),
+    linear-gradient(180deg, #fdfdff, #f4f6fd);
+  /* 同样不要外投影：窗口只有 280×132，阴影会被裁成一圈灰边 */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  font-family: var(--font);
+  animation: bubble-in 200ms var(--spring);
+}
+
+/* 指向桌宠的小尖角 */
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-right: 1px solid rgba(22, 32, 63, 0.09);
+  border-bottom: 1px solid rgba(22, 32, 63, 0.09);
+  border-radius: 0 0 3px 0;
+  background: #f5f7fd;
+  transform: rotate(45deg);
+}
+
+.bubble--tall {
+  gap: 9px;
+}
+
+/* 台词气泡：只有一句话，做成居中的小胶囊，不挡她的脸 */
+.bubble--say {
+  margin: 0 0 8px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  max-width: 214px;
+  text-align: center;
+  gap: 0;
+}
+
+.bubble--say::after {
+  display: none;
+}
+
+.bubble__say {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--ink);
 }
 
 @keyframes bubble-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(8px) scale(0.97);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
 .bubble__title {
   margin: 0;
-  font-size: 14px;
-  font-weight: 500;
-  color: #19234c;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .bubble__meta {
-  margin: 4px 0 10px;
-  font-size: 12px;
-  color: #37447d;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+
+/* 出错时用同一行位置顶掉描述，气泡太小，不额外占一行 */
+.bubble__meta--error {
+  color: var(--danger);
 }
 
 .bubble__actions {
   display: flex;
-  gap: 8px;
+  gap: 7px;
+  margin-top: 2px;
+}
+
+/* 开始提醒：主操作单独一行，下面并排两个次要操作 */
+.bubble__stack {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* 纵向排列时不能再让按钮按 flex:1 分高度——那样三行会被压扁，
+   卡片比内容矮，窗口顶部就露出一片透明（还会挡住桌面点击）。
+   选择器要比 .bubble__btn 更具体，否则被它后面的 flex: 1 盖掉。
+   横排的 .bubble__row / .bubble__quick 里的按钮仍然是 flex:1 平分宽度。 */
+.bubble__stack > .bubble__btn,
+.bubble__stack > .bubble__row,
+.bubble__stack > .bubble__quick {
+  flex: none;
+}
+
+.bubble__row {
+  display: flex;
+  gap: 7px;
+}
+
+/* 快捷时刻：比按钮轻一档，用胶囊；三个平分一行 */
+.bubble__quick {
+  display: flex;
+  gap: 6px;
+}
+
+.bubble__chip {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 4px;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+
+.bubble__chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.bubble__chip:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
 }
 
 .bubble__btn {
   flex: 1;
-  height: 30px;
-  padding: 0 4px;
-  border: 1px solid #355cb6;
-  border-radius: 9px;
-  background: transparent;
-  color: #355cb6;
+  min-width: 0;
+  height: 29px;
+  padding: 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--font);
   font-size: 11px;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
+  transition:
+    transform 0.16s var(--spring),
+    background 0.18s var(--ease),
+    border-color 0.18s var(--ease),
+    color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+
+.bubble__btn:hover:not(:disabled) {
+  border-color: var(--brand-3);
+  color: var(--brand);
+  background: var(--surface-2);
+}
+
+.bubble__btn:active:not(:disabled) {
+  transform: scale(0.96);
 }
 
 .bubble__btn--primary {
-  background: #355cb6;
+  border-color: transparent;
+  background: linear-gradient(145deg, var(--brand-2), var(--brand));
   color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 3px 10px rgba(53, 92, 182, 0.3);
+}
+
+.bubble__btn--primary:hover:not(:disabled) {
+  background: linear-gradient(145deg, #6a99f5, var(--brand-2));
+  color: #ffffff;
+  border-color: transparent;
 }
 
 .bubble__btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.bubble__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 气泡里的日历：去掉浮层那层边框和内边距，直接铺开 */
+.bubble .dp__body {
+  gap: 9px;
+}
+
+.bubble .dp__foot {
+  padding-top: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bubble {
+    animation: none;
+  }
 }

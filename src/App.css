@@ -37,3 +37,12 @@ body {
 .pet-hit:active {
   cursor: grabbing;
 }
+
+/* 贴边时改成小手：这时候她是「靠着墙休息」，不是待拖动 */
+.stage--docked .pet-hit {
+  cursor: pointer;
+}
+
+.stage--drag .pet-hit {
+  cursor: grabbing;
+}

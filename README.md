@@ -4,6 +4,10 @@
 
 待机时是一位站在桌面上的鲸鱼女仆娘；需要时双击展开待办面板。待办支持定时提醒和定时追问进度，并对外提供 MCP 工具，让 AI 可以直接增删改完成待办。
 
+她也有自己的生活：**摸头**会脸红撒爱心，拖到屏幕边缘会**贴边停靠**、侧身靠着墙，
+长时间没人理就依次**发呆 → 摸鱼 → 打瞌睡 → 盖被子睡**，睡着时还会慢慢缩到屏幕外只露一半，鼠标过来再滑回来。
+右键或托盘菜单可以随时叫她演任意一个动作。
+
 ---
 
 ## 文档
@@ -14,6 +18,7 @@
 | [02-product-prototype.md](docs/02-product-prototype.md) | 产品定位、三种界面态、状态机、交互流程、MVP 范围 | 讨论"要不要做这个功能"时 |
 | [03-data-and-mcp-contract.md](docs/03-data-and-mcp-contract.md) | 表结构、状态流转、8 个 MCP 工具定义、并发策略 | 写任何代码前 |
 | [04-pet-character-design.md](docs/04-pet-character-design.md) | 形象授权、配色板、素材处理、状态映射、动画规格 | 改宠物表现时 |
+| [05-pet-interactions.md](docs/05-pet-interactions.md) | 手势、待机状态机、15 个动作、贴边停靠、台词气泡 | 改交互时 |
 
 ---
 
@@ -59,6 +64,7 @@
 - [x] M5 追问：按截止倒推的追问计划 + 三按钮回答 + 连续拖延自动降级
 - [x] M6 打磨：无边框面板、开机自启、NSIS 打包
 - [x] M7 分发：GitHub Actions 自动发版 + 应用内检查/下载/安装更新
+- [x] v0.3 交互：摸头 / 戳一戳 / 贴边停靠 / 待机打瞌睡、沉思、摸鱼、发呆、无聊 / 拖拽倾斜 / 落地回弹 / 台词气泡 / 右键与托盘动作菜单
 
 ---
 
@@ -67,14 +73,17 @@
 ```
 whale-reminder/
 ├── src/                      前端（React 19 + TypeScript）
-│   ├── App.tsx               桌宠容器：拖拽、状态机入口
-│   └── pet/                  立绘渲染、眨眼、状态映射
+│   ├── App.tsx               桌宠容器：手势、拖拽倾斜、右键菜单、贴边
+│   ├── pet/                  立绘渲染、粒子、待机状态机（usePetBehavior）
+│   ├── panel/                待办面板与提醒气泡
+│   └── ui/                   设计令牌（tokens.css）、弹性开关、日期选择器
 ├── src-tauri/                Rust 侧
 │   ├── src/main.rs           入口（M4 将在此分流 --mcp）
 │   ├── src/lib.rs            Tauri 装配
 │   ├── src/window.rs         窗口位置恢复与防抖持久化
-│   ├── src/tray.rs           托盘与右键菜单
-│   └── src/config.rs         配置文件读写
+│   ├── src/pet.rs            贴边吸附、工作区、探头
+│   ├── src/tray.rs           托盘与动作/贴边菜单
+│   └── src/config.rs         配置文件读写（含 dock 字段）
 ├── assets/pet/               立绘素材（WebP + meta.json + 图标）
 ├── tools/prepare-art.py      立绘处理脚本
 └── docs/                     设计文档
@@ -88,7 +97,7 @@ pnpm tauri dev      # 开发模式，热重载
 pnpm tauri build    # 打包 NSIS 安装包
 ```
 
-开发模式下可用数字键 `1`–`7` 预览各状态立绘（idle / react / remind / think / sleep / celebrate / drag），用于验证 6 张素材都能正常加载。
+开发模式下可用按键预览各动作：`1`–`0` 依次是 idle / pat / poke / happy / think / slack / daydream / bored / doze / sleep，`q` `w` `e` 分别是 work / eat / peek。
 
 ---
 

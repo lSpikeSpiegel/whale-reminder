@@ -59,6 +59,23 @@ erDiagram
         text task_id
         text payload
     }
+    note {
+        text id PK
+        text body
+        int  pinned
+        text updated_at
+        text deleted_at
+    }
+    tag {
+        text id PK
+        text name
+    }
+    note ||--o{ note_tag : "打标"
+    tag  ||--o{ note_tag : "被引用"
+    note_tag {
+        text note_id FK
+        text tag_id FK
+    }
 ```
 
 ---
@@ -183,7 +200,58 @@ CREATE INDEX idx_event_at ON event_log(at DESC);
 
 **用途**：AI 误操作追溯、调试"这条待办是谁改的"。保留最近 30 天，由 scheduler 每天清理一次。
 
-### 3.5 `meta`
+### 3.5 `note`
+
+```sql
+CREATE TABLE note (
+  id          TEXT PRIMARY KEY,
+  body        TEXT    NOT NULL,
+  pinned      INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0,1)),
+  created_at  TEXT    NOT NULL,
+  updated_at  TEXT    NOT NULL,
+  deleted_at  TEXT
+);
+
+CREATE INDEX idx_note_live ON note(deleted_at, pinned DESC, updated_at DESC);
+```
+
+**用途**：面板「备忘」页的便签。不挂提醒、不进调度器、不参与今日统计——
+和 `task` 分开存，免得每个「查未完成待办」的地方都要多写一条排除条件。
+
+- 正文统一换行符（CRLF → LF）并 trim，空内容和超过 5000 字的直接拒；
+- `pinned` 只影响排序（置顶在前）；**改置顶不动 `updated_at`**，否则置顶区内部的顺序会被这一个动作搅乱；
+- 只有 `body` 真的变了才写 `updated_at`，列表顺序因此稳定。
+
+### 3.6 `tag` / `note_tag`
+
+```sql
+CREATE TABLE tag (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX idx_tag_name ON tag(name);
+
+CREATE TABLE note_tag (
+  note_id TEXT NOT NULL REFERENCES note(id) ON DELETE CASCADE,
+  tag_id  TEXT NOT NULL REFERENCES tag(id)  ON DELETE CASCADE,
+  PRIMARY KEY (note_id, tag_id)
+);
+CREATE INDEX idx_note_tag_tag ON note_tag(tag_id);
+```
+
+**用途**：备忘的标签。**独立成表而不是塞进 `note.tags` 的 JSON**——「已有标签」要能脱离某条备忘存在
+（先建好标签、过两天才用得上）；只存在 JSON 里的话，没有任何备忘引用的标签会凭空消失。
+
+- 标签名 trim 后去掉开头的 `#`，最长 12 字；同名直接复用已有标签（不报错）；
+- 删标签是**硬删**并显式清掉 `note_tag`（不依赖 `ON DELETE CASCADE`：单测用的内存库没开 `foreign_keys`，
+  靠级联会出现「测试过、真机另一套」）。备忘本身不动，只是不再挂这个标签；
+- `note` 是软删的，所以删备忘**不**清 `note_tag`——恢复时标签关系要跟着回来；
+- 列表按 `tag.name` 排（位置稳定，选择器里的 chip 不会每次重排）；筛选走
+  `EXISTS (SELECT 1 FROM note_tag WHERE note_id = note.id AND tag_id = ?)`，用子查询而不是 JOIN，
+  一条备忘挂多个标签时才不会出重复行。
+
+### 3.7 `meta`
 
 ```sql
 CREATE TABLE meta (

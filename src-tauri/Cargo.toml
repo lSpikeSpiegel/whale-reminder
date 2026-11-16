@@ -26,6 +26,23 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 thiserror = "2"
 
+# 扫码助手：截屏 + 识别
+# xcap 抓屏（Windows 走 GDI/DXGI，返回物理像素的 RgbaImage），
+# rxing 是 ZXing 的 Rust 移植：decoders 认码、encoders 出码，一次覆盖二维码和一维码。
+# 关掉 rxing 的 image feature：它把 image 钉死在 =0.25.8，
+# 会和 xcap 用的 0.25.x 各编一份；我们自己把像素喂给它就够了。
+# encoding_rs 不能省：CharacterSet 的编解码方法挂在这个 feature 上，
+# 只开 decoders 会编不过。
+xcap = "0.9"
+rxing = { version = "0.9", default-features = false, features = [
+    "decoders",
+    "encoders",
+    "full_barcode_format_support",
+    "encoding_rs",
+] }
+image = { version = "0.25", default-features = false, features = ["png"] }
+base64 = "0.22"
+
 # MCP server（--mcp 模式）。default 已含 server + macros，只需补 stdio transport。
 rmcp = { version = "3.9", features = ["transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

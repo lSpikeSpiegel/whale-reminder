@@ -1,4 +1,6 @@
+pub mod note;
 pub mod reminder;
+pub mod tag;
 pub mod task;
 
 use serde::{Deserialize, Serialize};
@@ -8,6 +10,8 @@ use serde::{Deserialize, Serialize};
 pub struct ReminderView {
     pub id: String,
     pub kind: String,
+    /// 规则 JSON，例如 `{"type":"weekly","days":[1,3],"time":"09:00"}`
+    pub rule: String,
     pub next_fire_at: String,
     pub state: String,
 }
@@ -20,7 +24,10 @@ pub struct Task {
     pub description: String,
     pub status: String,
     pub priority: i64,
+    /// 计划结束时间
     pub due_at: Option<String>,
+    /// 计划开始时间
+    pub start_at: Option<String>,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
     pub estimate_min: Option<i64>,

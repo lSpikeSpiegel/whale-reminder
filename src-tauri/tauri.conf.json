@@ -33,7 +33,7 @@
         "title": "Whale Reminder",
         "url": "index.html?view=panel",
         "width": 436,
-        "height": 576,
+        "height": 500,
         "resizable": false,
         "maximizable": false,
         "decorations": false,

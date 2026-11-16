@@ -1,0 +1,549 @@
+/* 备忘录：上面一块「写字台」，下面一列便签。
+ *
+ * 比待办页安静一档——没有勾选、没有截止时间，只有正文和一行操作。
+ * 卡片白底 + shadow-1，和待办卡片同一个手感，换页不用重新认。 */
+
+/* ---------------------------------------------------------------- 写一条 */
+
+/* 整块是一张卡：textarea 不要自己的边框，焦点光圈套在卡片上，
+   否则框里框外两层描边，看着像嵌套了两层控件。 */
+.notes__composer {
+  margin: 0 16px 12px;
+  padding: 9px 11px 10px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: box-shadow 0.18s var(--ease);
+}
+
+.notes__composer:focus-within {
+  box-shadow:
+    var(--shadow-1),
+    0 0 0 3px var(--brand-ring);
+}
+
+.notes__input {
+  display: block;
+  width: 100%;
+  height: 54px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 13px;
+  line-height: 1.55;
+  resize: none;
+  outline: none;
+}
+
+.notes__input::placeholder {
+  color: var(--ink-4);
+}
+
+.notes__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* 快捷键提示放左边，按钮靠右——视线从「写」到「存」是一条直线 */
+.notes__hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notes__add {
+  flex: none;
+  height: 30px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+/* ---------------------------------------------------------------- 标签 */
+
+/* 标签行：贴在输入框下面，用一条淡分割线和正文分开——
+   「写什么」和「归到哪儿」是两件事，视觉上也该断开 */
+.tagpick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+/* 标签胶囊比普通胶囊小一号：一行要塞好几个，还常和「+ 标签」并排 */
+.chip--tag {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 10.5px;
+}
+
+/* 「+ 标签」用虚线框，一眼看出是「新建」而不是某个已有标签 */
+.chip--dashed {
+  border-style: dashed;
+  color: var(--ink-3);
+}
+
+.chip--dashed:hover {
+  border-color: var(--brand-3);
+}
+
+/* 就地变成输入框：宽度只够几个字，和胶囊一样高 */
+.tagpick__input {
+  width: 84px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--brand-2);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 10.5px;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.tagpick__input::placeholder {
+  color: var(--ink-4);
+}
+
+/* 「管理」是退路，弱化成文字按钮，别和标签胶囊抢位置 */
+.tagpick__manage {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.tagpick__manage:hover,
+.tagpick__manage--on {
+  background: var(--surface-2);
+  color: var(--brand);
+}
+
+.tagpick__manage:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 管理面板摊在写备忘那张卡里，不开浮层：面板只有 436 宽，浮层没地方放，
+   而且它一展开就该把卡片撑高，用户才知道下面多了东西 */
+.tagmgr {
+  margin-top: 8px;
+  padding: 8px 9px 6px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  animation: tagmgr-in 160ms var(--ease) both;
+}
+
+/* 只用 opacity：带位移的话 fit() 会量到动画中间态 */
+@keyframes tagmgr-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tagmgr__head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.tagmgr__title {
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tagmgr__hint {
+  color: var(--ink-4);
+  font-size: 10px;
+}
+
+.tagmgr__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tagmgr__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+}
+
+.tagmgr__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-2);
+  font-size: 11.5px;
+}
+
+.tagmgr__count {
+  flex: none;
+  color: var(--ink-4);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tagmgr__del {
+  flex: none;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.tagmgr__del:hover,
+.tagmgr__del--armed {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.tagmgr__del--armed {
+  font-weight: 600;
+}
+
+.tagmgr__del:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.tagmgr__empty {
+  margin: 0;
+  padding: 4px 0 2px;
+  color: var(--ink-4);
+  font-size: 10.5px;
+}
+
+/* ---------------------------------------------------------------- 筛选 */
+
+/* 筛选行在列表上方。和输入区的标签行长得像，但更小一档——
+   一个是「给这条打标」，一个是「看哪一类」，位置不同就不该长一样 */
+.notes__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 16px 8px;
+}
+
+.chip--sm {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 10.5px;
+}
+
+/* 借用 .list-head__hint 的位置和字号（margin-left:auto + 10.5px），改成可点的 */
+.notes__clear-filter {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font);
+  cursor: pointer;
+}
+
+.notes__clear-filter:hover {
+  color: var(--brand);
+}
+
+/* ---------------------------------------------------------------- 便签 */
+
+/* 列表容器直接用 .panel__list（flex:1 + 滚动 + 滚动条样式），
+   这里只补卡片本身。注意别再改它的 padding-bottom：fit() 按 12px 算窗口高度。 */
+
+.note {
+  margin: 0 4px 6px;
+  padding: 9px 11px 8px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  /* 整张卡片可点即复制，光标要说明这件事 */
+  cursor: pointer;
+  animation: task-in 260ms var(--spring) backwards;
+  transition:
+    transform 0.18s var(--spring),
+    box-shadow 0.18s var(--ease);
+}
+
+.note:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+/* 置顶：左边一根品牌色竖条。不用图钉图标——导航里已经全是图标，
+   列表里再来一个容易和「删除」那排小按钮混在一起。 */
+.note--pinned {
+  box-shadow:
+    inset 2px 0 0 var(--brand),
+    var(--shadow-1);
+}
+
+.note--pinned:hover {
+  box-shadow:
+    inset 2px 0 0 var(--brand),
+    var(--shadow-2);
+}
+
+/* 复制成功：描边亮一下。不弹 toast——面板里没有全局提示位，
+   为一句「已复制」再搭个浮层不值得，反馈放在点击的位置最省事 */
+.note--copied,
+.note--copied:hover {
+  box-shadow:
+    inset 0 0 0 1px var(--brand-2),
+    var(--shadow-2);
+}
+
+/* 置顶的卡片本来有一根左侧竖条，复制态得把它保住 */
+.note--pinned.note--copied,
+.note--pinned.note--copied:hover {
+  box-shadow:
+    inset 2px 0 0 var(--brand),
+    inset 0 0 0 1px var(--brand-2),
+    var(--shadow-2);
+}
+
+/* 键盘走到卡片上时要看得见焦点。放在复制态后面，按回车复制完光圈不会被吃掉 */
+.note:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px var(--brand-ring),
+    var(--shadow-2);
+}
+
+/* 编辑态是一块表单，别再弹一下；也不该是可点的卡片 */
+.note--editing,
+.note--editing:hover {
+  transform: none;
+  cursor: default;
+  box-shadow:
+    0 0 0 1px var(--line-2),
+    var(--shadow-1);
+}
+
+.note__body {
+  margin: 0;
+  color: var(--ink);
+  font-size: 12.5px;
+  line-height: 1.65;
+  /* 用户敲的换行要保留；长网址、长串也得能断 */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 折起来的长备忘：五行之外省略。点「展开」才铺开 */
+.note__body--fold {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+}
+
+/* 卡片上的标签：点一下筛到同类。做得轻——它是附注，不该和正文抢注意力 */
+.note__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.note__tag {
+  padding: 1px 6px;
+  border: none;
+  border-radius: 5px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-family: var(--font);
+  font-size: 10px;
+  cursor: pointer;
+  transition:
+    background 0.14s var(--ease),
+    color 0.14s var(--ease);
+}
+
+.note__tag:hover,
+.note__tag--on {
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.note__tag:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.note__foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.note__at {
+  flex: none;
+  /* 留够「今天 13:26」的宽度：复制时换成「已复制」，没有这个下限
+     右边的「展开」会跟着抖一下 */
+  min-width: 58px;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 复制成功的反馈就落在这个位置上：时间临时让位给「已复制」 */
+.note__at--copied {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* 「展开 / 收起」：常驻可见，不像右边那排操作要悬停才出来——
+   它是读长内容的入口，藏起来用户就以为这条只有五行 */
+.note__fold {
+  flex: none;
+  padding: 2px 5px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--brand);
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: background 0.16s var(--ease);
+}
+
+.note__fold:hover {
+  background: var(--brand-soft);
+}
+
+.note__fold:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 置顶 / 编辑 / 删除：平时藏起来，免得每条都挂一排按钮。
+   编辑态例外（--on），那时候取消和保存是唯一该看的东西 */
+.note__acts {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.16s var(--ease);
+}
+
+.note:hover .note__acts,
+.note:focus-within .note__acts,
+.note__acts--on {
+  opacity: 1;
+}
+
+.note__act {
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.note__act:hover {
+  background: var(--surface-2);
+  color: var(--brand);
+}
+
+.note__act--brand {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.note__act--danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* 点过一下的删除：底色变红、字变「确定删除？」，3.5 秒不点自己退回去 */
+.note__act--armed,
+.note__act--armed:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.note__act:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 编辑框：铺满卡片宽度，高度够写五六行，再多自己滚 */
+.notes__edit {
+  display: block;
+  width: 100%;
+  min-height: 64px;
+  max-height: 180px;
+  padding: 7px 9px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 12.5px;
+  line-height: 1.65;
+  resize: vertical;
+  outline: none;
+  transition:
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+
+.notes__edit:focus {
+  border-color: var(--brand-2);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+  background: var(--surface);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .note,
+  .tagmgr {
+    animation: none;
+    transition-duration: 1ms;
+  }
+
+  .notes__composer {
+    transition-duration: 1ms;
+  }
+}

@@ -1,0 +1,83 @@
+/* 面板窗口的八向缩放热区。
+ *
+ * 面板窗口四周有 8px 透明边距（`.panel` 的 margin），热区正好塞在那圈空隙里：
+ * 不占视觉空间，也不会挡住面板里的任何按钮。用户能感知到的只有光标形状。
+ *
+ * 拖拽本身交给系统（`startResizeDragging`），这里只回答「哪块区域算哪个方向」。
+ */
+
+.rz {
+  position: fixed;
+  z-index: 20;
+  /* 拖拽时别让 WebView 顺手去选文字 / 拖图片 */
+  user-select: none;
+  touch-action: none;
+}
+
+/* 四边各 10px：面板本身从 8px 开始（`.panel` 的 margin），所以热区正好盖住
+ * 那圈透明边距 + 可见边缘 2px。窗口是 `resizable: false`，没有系统那层边框窗口抢鼠标，
+ * 这 10px 全归我们。 */
+.rz--n,
+.rz--s {
+  left: 0;
+  right: 0;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.rz--n {
+  top: 0;
+}
+
+.rz--s {
+  bottom: 0;
+}
+
+.rz--w,
+.rz--e {
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.rz--w {
+  left: 0;
+}
+
+.rz--e {
+  right: 0;
+}
+
+/* 四角 16×16，压住四条边的端点 */
+.rz--nw,
+.rz--ne,
+.rz--sw,
+.rz--se {
+  width: 16px;
+  height: 16px;
+}
+
+.rz--nw {
+  top: 0;
+  left: 0;
+  cursor: nwse-resize;
+}
+
+.rz--ne {
+  top: 0;
+  right: 0;
+  cursor: nesw-resize;
+}
+
+.rz--sw {
+  bottom: 0;
+  left: 0;
+  cursor: nesw-resize;
+}
+
+.rz--se {
+  bottom: 0;
+  right: 0;
+  cursor: nwse-resize;
+}

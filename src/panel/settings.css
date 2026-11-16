@@ -1,0 +1,106 @@
+/* 设置页：分组卡片 + 一行说明。卡片沿用待办页那套白底 + 微投影 */
+
+.set {
+  margin: 0 0 10px;
+  padding: 8px 9px 9px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+}
+
+.set:last-child {
+  margin-bottom: 0;
+}
+
+.set__title {
+  margin: 0 0 3px;
+  padding: 0 3px;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+/* 设置里的行沿用待办页的 .option，但不要悬停变色——这里不是可选项 */
+.set .option {
+  padding: 4px 3px;
+}
+
+.set .option:hover {
+  background: transparent;
+}
+
+.set__hint {
+  margin: 3px 3px 0;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+/* 清空成功后同一行改成结果，别另起一块 */
+.set__hint--ok {
+  color: var(--brand);
+}
+
+/* 清空历史：平时是个安静的次级按钮，点第一下变成实心红确认 */
+.set__danger {
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border-color: var(--line-2);
+  color: var(--ink-2);
+  font-size: 11.5px;
+}
+
+.set__danger:hover:not(:disabled) {
+  border-color: rgba(179, 64, 58, 0.35);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.set__danger--armed,
+.set__danger--armed:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--danger);
+  color: #ffffff;
+}
+
+/* 恢复自动高度：和「清空」一个尺寸档的次级按钮 */
+.set__reset {
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border-color: var(--line-2);
+  color: var(--ink-2);
+  font-size: 11.5px;
+}
+
+/* 关于：左键右值 */
+.set__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 3px;
+  font-size: 11.5px;
+}
+
+.set__key {
+  flex: none;
+  color: var(--ink-3);
+}
+
+.set__value {
+  margin-left: auto;
+  min-width: 0;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.set__value--path {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}

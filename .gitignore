@@ -24,6 +24,20 @@ src-tauri/gen/schemas
 
 # 编辑器/工具产出的本地数据
 .workbuddy-ai
+.workbuddy
+.tmp-sdk
+.run.json
+
+# DeepSeek-chan 模型本体（moc3 + 4K 贴图 + 131MB PSD，约 200MB）。
+# 作者授权里明确不允许二次分发，所以只留导出的 assets/pet-real/，
+# 原始素材放本地、由 tools/prepare-real-art.py 生成。
+DeepSeek-chan*
+
+# 动态立绘的模型本体（15.7MB moc3 + 1024² 贴图）：同上，不允许二次分发，
+# 由 tools/prepare-live2d.py 从本地原始模型生成。
+# 目录里的着色器、Cubism Core、参数表是可以随应用分发的，照常入库。
+assets/live2d/model.moc3
+assets/live2d/textures/
 
 # Editor directories and files
 .vscode/*
