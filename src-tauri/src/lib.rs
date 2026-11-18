@@ -21,6 +21,8 @@ mod repository;
 mod scanner;
 mod scheduler;
 mod settings;
+// 呼出面板的全局快捷键。只有一条，绑定值存在 settings.json
+mod shortcut;
 // 写路径的统一入口（推进 HLC + 投 outbox），也被 repository 反过来调用
 mod sync;
 mod tools;
@@ -41,6 +43,17 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            // 热键事件按下 / 松开各来一条，这里只放行按下——两条都处理的话，
+            // 按一次 Alt+Space 会「打开又立刻收起」，看起来像完全没反应
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        shortcut::on_pressed(app);
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -70,9 +83,16 @@ pub fn run() {
             // 浮层是临时窗口，整屏截图存在这个状态里，关窗口即释放
             app.manage(overlay::OverlayState::default());
             app.manage(color::PickedColor::default());
+            // 设置页录制新快捷键期间，热键回调要装死（别把面板收走）
+            app.manage(shortcut::Capturing::default());
 
             // 气泡停留时长是用户设置，调度器启动前先灌进去
-            scheduler::set_bubble_ttl(settings::load(&handle).bubble_seconds);
+            let settings = settings::load(&handle);
+            scheduler::set_bubble_ttl(settings.bubble_seconds);
+
+            // 全局快捷键：默认 Control+Alt+Space，被别的程序占着时自动换一个能用的，
+            // 并把实际生效的组合写回配置（设置页显示的就是它）
+            commands::bind_panel_shortcut(&handle);
 
             // 气泡和面板都是透明窗口，同样要抹掉 WebView2 的默认底色
             for label in ["bubble", "panel"] {
@@ -114,6 +134,9 @@ pub fn run() {
             commands::set_bubble_seconds,
             commands::set_autostart,
             commands::set_panel_size,
+            commands::set_panel_shortcut,
+            commands::begin_shortcut_capture,
+            commands::resume_shortcut,
             commands::set_pet_style,
             commands::set_pet_live2d,
             commands::web_log,

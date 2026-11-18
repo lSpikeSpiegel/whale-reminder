@@ -42,6 +42,18 @@
   color: var(--brand);
 }
 
+/* 录制快捷键时按错了（裸字母、后端不认的键）：这一行要能一眼看出没成 */
+.set__hint--warn {
+  color: var(--warn);
+}
+
+/* 「等着你按」的占位：品牌色 + 虚线底，和旁边那种已经定下来的值区分开 */
+.set__capture {
+  color: var(--brand);
+  border-bottom: 1px dashed var(--brand-3);
+  padding-bottom: 1px;
+}
+
 /* 清空历史：平时是个安静的次级按钮，点第一下变成实心红确认 */
 .set__danger {
   flex: none;

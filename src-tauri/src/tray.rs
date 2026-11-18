@@ -221,6 +221,38 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// 快捷键呼出 / 收起面板。
+///
+/// 三种情形分开处理，别一律 `show + focus`：
+///
+/// - 窗口不在 → 走 `open_panel` 重建（快捷键是「随手叫出来」的场景，重建那几百毫秒
+///   比什么都不发生要好）；
+/// - 在但没聚焦（被别的窗口压住了）→ 提到最前，这是「呼出」的主路径；
+/// - 已经聚焦在最前 → 收起来。
+///
+/// **收起用 `hide` 不用 `close`**：面板里常常正填着表单，销毁等于白填。隐藏之后
+/// 再按一次回来，输入还在；窗口重新拿到焦点时 `Panel.tsx` 会自己 `refresh()`，
+/// 所以隐藏期间被 MCP 改过的数据也不会显示成旧列表。
+/// （关闭按钮仍然是真关，那是用户的明确意图，不走这里。）
+pub(crate) fn toggle_panel<R: Runtime>(app: &AppHandle<R>) {
+    let Some(window) = app.get_webview_window(PANEL_LABEL) else {
+        open_panel(app);
+        return;
+    };
+
+    if !window.is_visible().unwrap_or(false) {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+
+    if window.is_focused().unwrap_or(false) {
+        let _ = window.hide();
+    } else {
+        let _ = window.set_focus();
+    }
+}
+
 /// 打开待办面板（独立窗口），已打开则聚焦。
 ///
 /// 托盘菜单和桌宠双击都走这里，避免两处逻辑走偏。

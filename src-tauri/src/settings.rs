@@ -22,6 +22,100 @@ const MAX_BUBBLE_SECONDS: u32 = 120;
 pub const MIN_PANEL_WIDTH: u32 = 320;
 pub const MIN_PANEL_HEIGHT: u32 = 260;
 
+/// 呼出待办面板的全局快捷键默认值。
+///
+/// **不用 `Alt+Space`**：那是 uTools、PowerToys Run 这类启动器的默认键，装机量很大，
+/// 撞上之后 `RegisterHotKey` 直接返回「已被注册」，功能等于没做。带 Ctrl 的三键
+/// 组合冲突概率低得多，手感也还在空格上。
+///
+/// 用户可以在设置页直接录制一个新组合（`set_panel_shortcut`），
+/// 或者手改这里对应的 `settings.json` 字段 `panel_shortcut`。
+pub const DEFAULT_PANEL_SHORTCUT: &str = "Control+Alt+Space";
+
+/// 把用户写的快捷键归一化成插件认的规范写法。
+///
+/// 插件那层（`global-hotkey`）解析时全部 `to_uppercase()` 再比对，所以大小写不敏感；
+/// 但它**只认** `Alt` / `Option` / `Ctrl` / `Control` / `Shift` / `Cmd` / `Command` /
+/// `Super` 这几个修饰键名——`Win`、`Meta` 会被当成主键解析然后报错。所以这里要
+/// 把常见的别名折算过去，不指望用户记得住插件那套拼法。
+///
+/// 修饰键顺序固定成 Ctrl → Alt → Shift → Super，和 Windows 上的习惯写法一致，
+/// 免得同一个组合因为手写顺序不同在设置页显示两种样子。
+///
+/// 认不出来的主键**原样保留**：这一层不做猜测，注册那步会报错并退回默认值。
+pub fn normalize_shortcut(raw: &str) -> String {
+    let cleaned = raw.trim().replace('＋', "+");
+    if cleaned.is_empty() {
+        return DEFAULT_PANEL_SHORTCUT.to_string();
+    }
+
+    let mut ctrl = false;
+    let mut alt = false;
+    let mut shift = false;
+    let mut sup = false;
+    let mut key: Option<String> = None;
+
+    for part in cleaned.split('+') {
+        let token = part.trim();
+        if token.is_empty() {
+            continue;
+        }
+        match token.to_ascii_lowercase().as_str() {
+            "alt" | "option" => alt = true,
+            "ctrl" | "control" => ctrl = true,
+            "shift" => shift = true,
+            "cmd" | "command" | "super" | "win" | "meta" => sup = true,
+            // 主键只留第一个，多写的直接忽略（和插件的「只允许一个主键」对齐）
+            _ => {
+                if key.is_none() {
+                    key = Some(canonical_key(token));
+                }
+            }
+        }
+    }
+
+    let Some(key) = key else {
+        // 只有修饰键没有主键，不是合法热键
+        return DEFAULT_PANEL_SHORTCUT.to_string();
+    };
+
+    let mut out = String::new();
+    for (on, name) in [
+        (ctrl, "Control"),
+        (alt, "Alt"),
+        (shift, "Shift"),
+        (sup, "Super"),
+    ] {
+        if on {
+            out.push_str(name);
+            out.push('+');
+        }
+    }
+    out.push_str(&key);
+    out
+}
+
+/// 主键的规范写法：首字母大写，其余小写。
+///
+/// 插件是拿大写去比对的（`KEYA` / `SPACE` / `PAGEDOWN`），所以 `keya`、`KeyA`、
+/// `KEYA` 三种写法都能通；这里统一成 `KeyA` 只是为了设置页显示好看，不承担校验。
+fn canonical_key(token: &str) -> String {
+    // 中文习惯写法，顺手认一下
+    if matches!(token, "空格" | "空格键") {
+        return "Space".to_string();
+    }
+    let mut chars = token.chars();
+    match chars.next() {
+        Some(first) => {
+            let mut out = first.to_uppercase().collect::<String>();
+            out.push_str(&chars.as_str().to_lowercase());
+            out
+        }
+        None => String::new(),
+    }
+}
+
+
 /// 桌宠立绘风格。
 ///
 /// 两套素材是两份独立的美术资源，前端按这里切换 `assets/pet` 与 `assets/pet-real`。
@@ -107,7 +201,7 @@ impl PanelSize {
 ///
 /// 字段全部 `#[serde(default)]`：以后加新字段时，老配置文件不能一读就失败
 /// （和 `config.rs` 里 window.json 的坑一样）。
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     /// 提醒气泡无人操作时自动收起的秒数
     #[serde(default = "default_bubble_seconds")]
@@ -121,10 +215,17 @@ pub struct Settings {
     /// 是否用 Live2D 动态立绘（只有写实风格有模型，Q 版忽略）
     #[serde(default)]
     pub pet_live2d: bool,
+    /// 呼出待办面板的全局快捷键，写法见 `normalize_shortcut`
+    #[serde(default = "default_panel_shortcut")]
+    pub panel_shortcut: String,
 }
 
 fn default_bubble_seconds() -> u32 {
     DEFAULT_BUBBLE_SECONDS
+}
+
+fn default_panel_shortcut() -> String {
+    DEFAULT_PANEL_SHORTCUT.to_string()
 }
 
 impl Default for Settings {
@@ -134,6 +235,7 @@ impl Default for Settings {
             panel_size: None,
             pet_style: PetStyle::default(),
             pet_live2d: false,
+            panel_shortcut: default_panel_shortcut(),
         }
     }
 }
@@ -147,6 +249,7 @@ impl Settings {
             panel_size: self.panel_size.map(PanelSize::clamped),
             pet_style: self.pet_style,
             pet_live2d: self.pet_live2d,
+            panel_shortcut: normalize_shortcut(&self.panel_shortcut),
         }
     }
 }
@@ -225,6 +328,37 @@ mod tests {
         assert!(parsed.panel_size.is_none());
         // 同样没有 pet_style，得退回默认的写实立绘
         assert_eq!(parsed.pet_style, PetStyle::Real);
+        // 0.4.0 之前没有快捷键字段，也要给出 Alt+Space
+        assert_eq!(parsed.panel_shortcut, DEFAULT_PANEL_SHORTCUT);
+    }
+
+    #[test]
+    fn shortcut_aliases_collapse_to_one_canonical_form() {
+        // 大小写、空格、全角加号、别名都要收成正主
+        for raw in [
+            "alt+space",
+            "ALT + SPACE",
+            "Option+Space",
+            "alt＋space",
+            " Alt+空格 ",
+        ] {
+            assert_eq!(normalize_shortcut(raw), "Alt+Space", "{raw}");
+        }
+        // Win / Meta 插件不认，必须折算成 Super，否则会被当成主键解析失败
+        assert_eq!(normalize_shortcut("win+space"), "Super+Space");
+        assert_eq!(normalize_shortcut("meta+shift+k"), "Shift+Super+K");
+        // 修饰键顺序固定，别让同一个组合出现两种写法
+        assert_eq!(normalize_shortcut("shift+alt+ctrl+p"), "Control+Alt+Shift+P");
+        assert_eq!(normalize_shortcut("ctrl + alt + p"), "Control+Alt+P");
+    }
+
+    #[test]
+    fn broken_shortcut_falls_back_instead_of_going_empty() {
+        // 空的、只有修饰键的：都退回默认值，不能存一个注册不上的空串
+        assert_eq!(normalize_shortcut("   "), DEFAULT_PANEL_SHORTCUT);
+        assert_eq!(normalize_shortcut("Alt+"), DEFAULT_PANEL_SHORTCUT);
+        // 认不出来的主键原样保留，交给注册那步报错退回（这里不猜）
+        assert_eq!(normalize_shortcut("Alt+Foo"), "Alt+Foo");
     }
 
     #[test]
@@ -241,6 +375,7 @@ mod tests {
             panel_size: None,
             pet_style: PetStyle::Chibi,
             pet_live2d: true,
+            panel_shortcut: DEFAULT_PANEL_SHORTCUT.to_string(),
         })
         .unwrap();
         let back: Settings = serde_json::from_str(&raw).unwrap();
@@ -278,10 +413,12 @@ mod tests {
             }),
             pet_style: PetStyle::Real,
             pet_live2d: false,
+            panel_shortcut: "Control+Alt+P".to_string(),
         };
         let raw = serde_json::to_string(&settings).unwrap();
         let back: Settings = serde_json::from_str(&raw).unwrap();
         assert_eq!(back.panel_size, settings.panel_size);
         assert_eq!(back.pet_live2d, settings.pet_live2d);
+        assert_eq!(back.panel_shortcut, "Control+Alt+P");
     }
 }

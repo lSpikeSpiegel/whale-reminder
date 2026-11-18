@@ -122,6 +122,9 @@ pub fn open_panel(app: tauri::AppHandle) {
 /// 关之前记一下位置，免得每次重开都跳回屏幕中间。
 #[tauri::command]
 pub fn close_panel(app: tauri::AppHandle) {
+    // 面板是在设置页录制热键时被关掉的：录制态要收掉，否则热键会一直装死
+    end_capture(&app);
+
     let Some(window) = app.get_webview_window("panel") else {
         return;
     };
@@ -155,6 +158,8 @@ pub struct SettingsView {
     pub pet_style: crate::settings::PetStyle,
     /// 是否用 Live2D 动态立绘
     pub pet_live2d: bool,
+    /// 呼出待办面板的全局快捷键（规范写法，见 `settings::normalize_shortcut`）
+    pub panel_shortcut: String,
 }
 
 fn settings_view(app: &tauri::AppHandle) -> SettingsView {
@@ -169,6 +174,7 @@ fn settings_view(app: &tauri::AppHandle) -> SettingsView {
         panel_size: settings.panel_size,
         pet_style: settings.pet_style,
         pet_live2d: settings.pet_live2d,
+        panel_shortcut: settings.panel_shortcut,
     }
 }
 
@@ -181,9 +187,11 @@ pub fn get_settings(app: tauri::AppHandle) -> SettingsView {
 #[tauri::command]
 pub fn set_bubble_seconds(app: tauri::AppHandle, seconds: u32) -> SettingsView {
     let mut settings = crate::settings::load(&app);
-    settings.bubble_seconds = crate::settings::clamp_seconds(seconds);
+    let seconds = crate::settings::clamp_seconds(seconds);
+    settings.bubble_seconds = seconds;
+    // 先落盘再改调度器：save 拿走 settings 的所有权（`Settings` 有 String 字段，不是 Copy）
     crate::settings::save(&app, settings);
-    crate::scheduler::set_bubble_ttl(settings.bubble_seconds);
+    crate::scheduler::set_bubble_ttl(seconds);
     settings_view(&app)
 }
 
@@ -211,6 +219,64 @@ pub fn set_panel_size(
     settings.panel_size = size.map(|value| value.clamped());
     crate::settings::save(&app, settings);
     settings_view(&app)
+}
+
+/// 进入「录制新快捷键」状态。
+///
+/// **不是注销热键**，只是让热键回调装死：用户按到当前那个组合时，面板不能被他
+/// 自己收走（录制器就没了）。装死比注销安全——中途被打断也不会把热键弄丢。
+/// 退出录制态由 `set_panel_shortcut` / `resume_shortcut` / `close_panel` 负责。
+#[tauri::command]
+pub fn begin_shortcut_capture(app: tauri::AppHandle) {
+    use tauri::Manager;
+
+    if let Some(state) = app.try_state::<crate::shortcut::Capturing>() {
+        state.begin();
+    }
+}
+
+/// 换呼出面板的全局快捷键。
+///
+/// 先落盘再重绑：`bind` 会把**实际生效**的组合写回来（用户要的键被别的程序占着时，
+/// 会顺着备选往下试）。存用户写的原文没意义——设置页会一直显示一个按了没反应的组合。
+#[tauri::command]
+pub fn set_panel_shortcut(app: tauri::AppHandle, shortcut: String) -> SettingsView {
+    end_capture(&app);
+    {
+        let mut settings = crate::settings::load(&app);
+        settings.panel_shortcut = shortcut;
+        crate::settings::save(&app, settings);
+    }
+    bind_panel_shortcut(&app)
+}
+
+/// 按配置里存的值重新注册热键。
+///
+/// 两个用处：录制中途面板被关掉（录制态要收掉，否则热键一直装死）；录制取消后
+/// 把原来那个组合挂回去。幂等——正常情况多绑一次也就几十微秒。
+#[tauri::command]
+pub fn resume_shortcut(app: tauri::AppHandle) -> SettingsView {
+    end_capture(&app);
+    bind_panel_shortcut(&app)
+}
+
+fn end_capture(app: &tauri::AppHandle) {
+    use tauri::Manager;
+
+    if let Some(state) = app.try_state::<crate::shortcut::Capturing>() {
+        state.end();
+    }
+}
+
+/// 注册热键并把实际生效的写法落盘。
+pub(crate) fn bind_panel_shortcut(app: &tauri::AppHandle) -> SettingsView {
+    let mut settings = crate::settings::load(app);
+    let bound = crate::shortcut::bind(app, &settings.panel_shortcut);
+    if bound != settings.panel_shortcut {
+        settings.panel_shortcut = bound;
+        crate::settings::save(app, settings);
+    }
+    settings_view(app)
 }
 
 /// 换桌宠立绘：写盘 + 改窗口尺寸 + 通知桌宠窗口换图。

@@ -17,6 +17,89 @@ interface Props {
 /** 气泡停留时长的三档。再短来不及看清，再长就一直挡着屏幕 */
 const BUBBLE_CHOICES = [10, 15, 30];
 
+/**
+ * 快捷键的显示写法：`Control+Alt+Space` → `Ctrl + Alt + Space`。
+ *
+ * 后端存的是插件认的紧凑写法（好解析），显示时把分隔符两侧撑开、修饰键换成
+ * 用户熟的叫法。空串表示一个组合都没绑上（几个备选全被别的程序占着）。
+ */
+function shortcutLabel(raw?: string): string {
+  if (!raw) return "未生效";
+  return raw
+    .split("+")
+    .filter(Boolean)
+    .map((part) => (part === "Control" ? "Ctrl" : part === "Super" ? "Win" : part))
+    .join(" + ");
+}
+
+/** 按下这些键本身不算组合，得等真正的主键 */
+const MODIFIER_KEYS = new Set([
+  "Control",
+  "Alt",
+  "Shift",
+  "Meta",
+  "CapsLock",
+  "NumLock",
+  "ScrollLock",
+]);
+
+/**
+ * `KeyboardEvent.code` → 后端认的主键名。
+ *
+ * 两边命名本来就同源（都是 keyboard-types 那套 Code），字母 / 数字 / F1–F24 /
+ * 小键盘 / 方向键 / 标点全部一一对应，直接透传即可。挡掉的只是后端白名单里
+ * 没有的那几个（`IntlBackslash`、`NumpadComma` 这类极少见的键位）——
+ * 录进去也注册不上，不如当场说一声。
+ */
+const NAMED_CODES = new Set([
+  "Space",
+  "Enter",
+  "Escape",
+  "Tab",
+  "Backspace",
+  "Delete",
+  "Insert",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+  "ArrowUp",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "CapsLock",
+  "NumLock",
+  "PrintScreen",
+  "ScrollLock",
+  "Pause",
+  "Minus",
+  "Equal",
+  "Comma",
+  "Period",
+  "Slash",
+  "Backslash",
+  "Semicolon",
+  "Quote",
+  "BracketLeft",
+  "BracketRight",
+  "Backquote",
+  "NumpadAdd",
+  "NumpadSubtract",
+  "NumpadMultiply",
+  "NumpadDivide",
+  "NumpadDecimal",
+  "NumpadEnter",
+  "NumpadEqual",
+]);
+
+function hotkeyCode(code: string): string | null {
+  if (/^Key[A-Z]$/.test(code)) return code;
+  if (/^Digit[0-9]$/.test(code)) return code;
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+  if (/^Numpad[0-9]$/.test(code)) return code;
+  return NAMED_CODES.has(code) ? code : null;
+}
+
 export function Settings({ onLayout, onDataChanged, onResetSize }: Props) {
   const [view, setView] = useState<SettingsView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +108,10 @@ export function Settings({ onLayout, onDataChanged, onResetSize }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const confirmTimer = useRef(0);
+  /** 正在录制新快捷键：这期间整页的 keydown 都被拦下来 */
+  const [capturing, setCapturing] = useState(false);
+  /** 录制时按错了给一句提示，别让人以为卡住了 */
+  const [captureHint, setCaptureHint] = useState<string | null>(null);
 
   useEffect(() => {
     invoke<SettingsView>("get_settings")
@@ -37,7 +124,7 @@ export function Settings({ onLayout, onDataChanged, onResetSize }: Props) {
 
   useEffect(() => {
     onLayout();
-  }, [onLayout, view, error, confirming, note]);
+  }, [onLayout, view, error, confirming, note, capturing, captureHint]);
 
   useEffect(() => () => window.clearTimeout(confirmTimer.current), []);
 
@@ -65,6 +152,88 @@ export function Settings({ onLayout, onDataChanged, onResetSize }: Props) {
       return next;
     });
   };
+
+  const stopCapture = useCallback(() => {
+    setCapturing(false);
+    setCaptureHint(null);
+  }, []);
+
+  /** 开始录制。先告诉后端「别响应热键」，否则按到当前组合会先把面板自己收走 */
+  const startCapture = useCallback(() => {
+    if (busy || view === null) return;
+    setCaptureHint(null);
+    // 必须在后端真的置位之后再进入录制态：没置位就录，按到当前组合
+    // 会走正常的 toggle 把面板收起来，录制器当场没了
+    void invoke("begin_shortcut_capture")
+      .then(() => setCapturing(true))
+      .catch((err) => setError(String(err)));
+  }, [busy, view]);
+
+  /** 放弃录制：后端按 settings.json 里存的原值重新挂上 */
+  const cancelCapture = useCallback(() => {
+    stopCapture();
+    void invoke<SettingsView>("resume_shortcut")
+      .then((next) => {
+        setView(next);
+        setError(null);
+      })
+      .catch((err) => setError(String(err)));
+  }, [stopCapture]);
+
+  useEffect(() => {
+    if (!capturing) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      // 录制态下按什么都不该漏出去（尤其是别把面板自己的快捷键再触发一次）
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (event.key === "Escape") {
+        cancelCapture();
+        return;
+      }
+      // 还按着修饰键，等主键
+      if (MODIFIER_KEYS.has(event.key)) return;
+
+      const code = hotkeyCode(event.code);
+      if (code === null) {
+        setCaptureHint("这个键不行，换一个（字母、数字、F1–F24、方向键都可以）");
+        return;
+      }
+
+      const mods: string[] = [];
+      if (event.ctrlKey) mods.push("Control");
+      if (event.altKey) mods.push("Alt");
+      if (event.shiftKey) mods.push("Shift");
+      if (event.metaKey) mods.push("Super");
+      if (mods.length === 0) {
+        // 裸字母做全局热键会把正常打字全抢走，必须带修饰键
+        setCaptureHint("至少带一个 Ctrl / Alt / Shift / Win");
+        return;
+      }
+
+      stopCapture();
+      void apply(() =>
+        invoke<SettingsView>("set_panel_shortcut", {
+          shortcut: [...mods, code].join("+"),
+        }),
+      );
+    };
+
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [capturing, apply, cancelCapture, stopCapture]);
+
+  /**
+   * 面板被关掉时如果还在录制态，热键在后端是「装死」的——收掉它。
+   * 正常情况这个命令会随窗口一起消失，所以后端 `close_panel` 里也兜了一次。
+   */
+  useEffect(
+    () => () => {
+      void invoke("resume_shortcut").catch(() => {});
+    },
+    [],
+  );
 
   const armClear = () => {
     if (busy) return;
@@ -205,6 +374,31 @@ export function Settings({ onLayout, onDataChanged, onResetSize }: Props) {
           )}
         </div>
         <p className="set__hint">拖面板的边或角就能改大小，改完会记住，下次打开还是这么大。</p>
+
+        <div className="option">
+          <span className="option__label option__label--static">呼出快捷键</span>
+          <span className={`set__value${capturing ? " set__capture" : ""}`}>
+            {capturing ? "按下新的组合…" : shortcutLabel(view?.panel_shortcut)}
+          </span>
+          <button
+            type="button"
+            className="ui-btn set__reset"
+            onClick={capturing ? cancelCapture : startCapture}
+            disabled={busy || view === null}
+          >
+            {capturing ? "取消" : "改键"}
+          </button>
+        </div>
+        <p className={`set__hint${captureHint !== null ? " set__hint--warn" : ""}`}>
+          {captureHint ??
+            (capturing
+              ? "按你想用的组合，Esc 取消。"
+              : view === null
+                ? "随手按一下就能把面板叫到最前面，再按一次收起来。"
+                : view.panel_shortcut
+                  ? `随手按 ${shortcutLabel(view.panel_shortcut)} 把面板叫到最前，再按一次收起来。`
+                  : "这个组合被别的程序占着了，点「改键」换一个。")}
+        </p>
       </section>
 
       <section className="set">
