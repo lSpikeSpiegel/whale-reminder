@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Switch } from "../ui/Switch";
+import { LIVE2D_ENABLED } from "../live2d/availability";
 import type { SettingsView } from "./types";
 import "./settings.css";
 
@@ -151,35 +152,41 @@ export function Settings({ onLayout, onDataChanged, onResetSize }: Props) {
             : "Q 版已归档：11 张立绘照常能用，但不再跟着新交互更新。"}
         </p>
 
-        <div className="option">
-          <Switch
-            on={view?.pet_live2d ?? false}
-            label="动态立绘"
-            onChange={(next) => {
-              if (busy || view === null) return;
-              void apply(() => invoke<SettingsView>("set_pet_live2d", { on: next }));
-            }}
-          />
-          <button
-            type="button"
-            className="option__label"
-            onClick={() => {
-              if (busy || view === null) return;
-              void apply(() =>
-                invoke<SettingsView>("set_pet_live2d", { on: !view.pet_live2d }),
-              );
-            }}
-          >
-            动态立绘（Live2D）
-          </button>
-        </div>
-        <p className="set__hint">
-          {view?.pet_style !== "real"
-            ? "只在写实立绘下生效，先把上面的开关打开。"
-            : view?.pet_live2d
-              ? "模型 + 物理 + 眨眼：头发会晃，鼠标移过去她会看你。加载失败会自动退回静态图。"
-              : "打开后换成 Live2D 模型，代价是多占约 20 MB 内存和一点显卡。"}
-        </p>
+        {/* 动态立绘的模型本体不入库，发布版里没有素材，开关就完全不出来——
+            点开只会静默退回静态图，白白让人以为坏了。见 live2d/availability.ts */}
+        {LIVE2D_ENABLED && (
+          <>
+            <div className="option">
+              <Switch
+                on={view?.pet_live2d ?? false}
+                label="动态立绘"
+                onChange={(next) => {
+                  if (busy || view === null) return;
+                  void apply(() => invoke<SettingsView>("set_pet_live2d", { on: next }));
+                }}
+              />
+              <button
+                type="button"
+                className="option__label"
+                onClick={() => {
+                  if (busy || view === null) return;
+                  void apply(() =>
+                    invoke<SettingsView>("set_pet_live2d", { on: !view.pet_live2d }),
+                  );
+                }}
+              >
+                动态立绘（Live2D）
+              </button>
+            </div>
+            <p className="set__hint">
+              {view?.pet_style !== "real"
+                ? "只在写实立绘下生效，先把上面的开关打开。"
+                : view?.pet_live2d
+                  ? "模型 + 物理 + 眨眼：头发会晃，鼠标移过去她会看你。加载失败会自动退回静态图。"
+                  : "打开后换成 Live2D 模型，代价是多占约 20 MB 内存和一点显卡。"}
+            </p>
+          </>
+        )}
       </section>
 
       <section className="set">

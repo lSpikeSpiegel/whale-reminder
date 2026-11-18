@@ -318,6 +318,9 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
   模型得重下 16MB 的 moc3 和 5 张 4096² 贴图，表现为「拖一下就重载一次」。
   现在改成摘掉 `animation` → 强制回流 → 挂回去，DOM 和 WebGL 上下文都不动。
   凡是包着 `<canvas>` / iframe 的节点，都别用 key 来重播动画。
+- **动作菜单有两份，加动作要同时改**：右键菜单在 `App.tsx`（`MENU_STATES` / `MENU_MOODS`），
+  托盘在 `tray.rs`（`act:*`）。漏一处只是那个动作在某个入口里消失；前端在 `pet://action`
+  收到未知动作时会忽略并打日志，不会把立绘渲染成 undefined。
 - 新增交互要给出可见反馈（台词、状态、动效），不要静默成功。
 - **`.bubble__btn` 自带 `flex: 1`**，放进纵向的 `.bubble__stack` 会按纵向 basis 分高度，
   几行按钮一起被压扁（卡片比内容矮，窗口顶部露出一片透明还挡桌面点击）。栈里的子项要

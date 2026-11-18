@@ -58,39 +58,58 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "打开面板", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "隐藏桌宠", true, None::<&str>)?;
 
-    // 动作：和右键菜单同一套动作名，前端按字符串分发
+    // 动作：和右键菜单同一套动作名与中文名（`src/pet/poses.ts` 的 ACTIVITY_LABEL），
+    // 前端按字符串分发。**两边各有一份，改一处要同步另一处**——漏一个不会报错，
+    // 只是那个动作在菜单里消失（前端对未知动作有兜底，不会把立绘打成 undefined）。
     let act_pat = MenuItem::with_id(app, "act:pat", "摸摸头", true, None::<&str>)?;
-    let act_happy = MenuItem::with_id(app, "act:happy", "撒个欢", true, None::<&str>)?;
+    let act_react = MenuItem::with_id(app, "act:react", "抬头", true, None::<&str>)?;
     let act_think = MenuItem::with_id(app, "act:think", "沉思", true, None::<&str>)?;
     let act_slack = MenuItem::with_id(app, "act:slack", "摸鱼", true, None::<&str>)?;
     let act_daydream = MenuItem::with_id(app, "act:daydream", "发呆", true, None::<&str>)?;
     let act_bored = MenuItem::with_id(app, "act:bored", "无聊", true, None::<&str>)?;
+    let act_drag = MenuItem::with_id(app, "act:drag", "被拖动", true, None::<&str>)?;
+    let act_peek = MenuItem::with_id(app, "act:peek", "探头", true, None::<&str>)?;
     let act_doze = MenuItem::with_id(app, "act:doze", "打瞌睡", true, None::<&str>)?;
     let act_sleep = MenuItem::with_id(app, "act:sleep", "睡觉", true, None::<&str>)?;
     let act_work = MenuItem::with_id(app, "act:work", "坐下干活", true, None::<&str>)?;
     let act_eat = MenuItem::with_id(app, "act:eat", "吃点心", true, None::<&str>)?;
     let act_idle = MenuItem::with_id(app, "act:idle", "回神", true, None::<&str>)?;
+    let act_happy = MenuItem::with_id(app, "act:happy", "撒个欢", true, None::<&str>)?;
+    let act_angry = MenuItem::with_id(app, "act:angry", "生气了", true, None::<&str>)?;
+    let act_smug = MenuItem::with_id(app, "act:smug", "得意", true, None::<&str>)?;
+    let act_sad = MenuItem::with_id(app, "act:sad", "委屈", true, None::<&str>)?;
     let act_sep_a = PredefinedMenuItem::separator(app)?;
     let act_sep_b = PredefinedMenuItem::separator(app)?;
+    let act_sep_c = PredefinedMenuItem::separator(app)?;
 
     let actions = Submenu::with_items(
         app,
         "动作",
         true,
         &[
+            // 交互（走真实链路，连摸 / 连戳会累积情绪）
             &act_pat,
-            &act_happy,
             &act_sep_a,
+            // 状态
+            &act_react,
             &act_think,
             &act_slack,
             &act_daydream,
             &act_bored,
+            &act_drag,
+            &act_peek,
             &act_sep_b,
             &act_doze,
             &act_sleep,
             &act_work,
             &act_eat,
             &act_idle,
+            &act_sep_c,
+            // 情绪
+            &act_happy,
+            &act_angry,
+            &act_smug,
+            &act_sad,
         ],
     )?;
 

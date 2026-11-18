@@ -11,13 +11,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
-import { Menu } from "@tauri-apps/api/menu";
+import { Menu, type MenuItemOptions } from "@tauri-apps/api/menu";
 import { Pet } from "./pet/Pet";
 import { Panel } from "./panel/Panel";
 import { Bubble } from "./panel/Bubble";
 import { PickOverlay } from "./scan/PickOverlay";
 import { ScanOverlay } from "./scan/ScanOverlay";
 import { usePetBehavior } from "./pet/usePetBehavior";
+import { LIVE2D_ENABLED } from "./live2d/availability";
 import {
   ACTIVITY_LABEL,
   loadPetMeta,
@@ -63,22 +64,30 @@ const DEV_KEYS: Record<string, PetActivity> = {
   e: "peek",
 };
 
-/** 右键菜单里可以直接点的动作 */
-const MENU_ACTIONS: PetActivity[] = [
-  "pat",
-  "happy",
+/**
+ * 右键菜单「动作」里的两组动作。
+ *
+ * 覆盖全部 18 个 `PetActivity`，**只少了 `pat` / `poke`**：那两个在菜单顶部单独列，
+ * 走的是真实交互链路（连摸三下会得意、连戳五下会生气），和这里「直接演一遍」不同。
+ *
+ * 托盘菜单在 Rust 侧（`tray.rs`）另有一份，改这里记得同步那边。
+ */
+const MENU_STATES: PetActivity[] = [
+  "idle",
+  "react",
   "think",
   "slack",
   "daydream",
   "bored",
+  "drag",
+  "peek",
   "doze",
   "sleep",
   "work",
   "eat",
-  "angry",
-  "smug",
-  "idle",
 ];
+/** 情绪类，一眼能看出差别的四个 */
+const MENU_MOODS: PetActivity[] = ["happy", "angry", "smug", "sad"];
 
 interface Point {
   x: number;
@@ -113,8 +122,14 @@ function PetView() {
 
   const behavior = usePetBehavior(Boolean(dock));
   const { activity, burst } = behavior;
-  /** 真的用动态立绘吗。窗口尺寸和热区比例都跟着它走，所以只算一处 */
-  const live = style === "real" && live2d && liveFailed === null;
+  /**
+   * 真的用动态立绘吗。窗口尺寸和热区比例都跟着它走，所以只算一处。
+   *
+   * `LIVE2D_ENABLED` 关掉时这里恒为 false：模型本体不入库，发布版根本没有素材，
+   * 但用户上次在开发版里开过的话 `settings.json` 里还留着 `pet_live2d: true`，
+   * 不拦就是「每次启动都去加载一次必失败的文件」。
+   */
+  const live = LIVE2D_ENABLED && style === "real" && live2d && liveFailed === null;
 
   /** 按下时的屏幕坐标；null 表示当前没有按下 */
   const pressOrigin = useRef<Point | null>(null);
@@ -282,6 +297,12 @@ function PetView() {
         behaviorRef.current.wake();
         return;
       }
+      // 托盘菜单的动作清单在 Rust 侧（tray.rs），和这边各写一份；
+      // 拼错了别让她用一张 undefined 的立绘——直接忽略并留条日志
+      if (!(action in ACTIVITY_LABEL)) {
+        console.error("[pet] 未知动作，已忽略：", action);
+        return;
+      }
       behaviorRef.current.play(action as PetActivity, 5_200);
     });
     return () => {
@@ -443,19 +464,28 @@ function PetView() {
   const handleContextMenu = useCallback(
     async (e: ReactMouseEvent<HTMLDivElement>) => {
       e.preventDefault();
+
+      /** 一个「直接演一遍」的动作项。5.2 秒和状态机自己演一次的时长一致 */
+      const act = (activity: PetActivity): MenuItemOptions => ({
+        id: `act:${activity}`,
+        text: ACTIVITY_LABEL[activity],
+        action: () => behaviorRef.current.play(activity, 5_200),
+      });
+
       try {
         const menu = await Menu.new({
           items: [
             { id: "pat", text: "摸摸头", action: () => behaviorRef.current.pat() },
             { id: "poke", text: "戳一戳", action: () => behaviorRef.current.poke() },
+            { id: "wake", text: "叫醒她", action: () => behaviorRef.current.wake() },
             { item: "Separator" },
             {
               text: "动作",
-              items: MENU_ACTIONS.map((action) => ({
-                id: `act:${action}`,
-                text: ACTIVITY_LABEL[action],
-                action: () => behaviorRef.current.play(action, 5_200),
-              })),
+              items: [
+                ...MENU_STATES.map(act),
+                { item: "Separator" },
+                ...MENU_MOODS.map(act),
+              ],
             },
             {
               text: "贴边",
