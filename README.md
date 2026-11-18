@@ -18,7 +18,9 @@
 | [02-product-prototype.md](docs/02-product-prototype.md) | 产品定位、三种界面态、状态机、交互流程、MVP 范围 | 讨论"要不要做这个功能"时 |
 | [03-data-and-mcp-contract.md](docs/03-data-and-mcp-contract.md) | 表结构、状态流转、8 个 MCP 工具定义、并发策略 | 写任何代码前 |
 | [04-pet-character-design.md](docs/04-pet-character-design.md) | 形象授权、配色板、素材处理、状态映射、动画规格 | 改宠物表现时 |
-| [05-pet-interactions.md](docs/05-pet-interactions.md) | 手势、待机状态机、15 个动作、贴边停靠、台词气泡 | 改交互时 |
+| [05-pet-interactions.md](docs/05-pet-interactions.md) | 手势、待机状态机、18 个动作、贴边停靠、台词气泡 | 改交互时 |
+| [06-persistence-and-sync.md](docs/06-persistence-and-sync.md) | 持久化加固、HLC 逻辑时钟、变更日志、同步与冲突策略 | 动数据层时 |
+| [07-写实立绘接入.md](docs/07-写实立绘接入.md) | PSD 分层导出、动作组为什么用不了、Live2D 接入与落位校正 | 换 / 加立绘时 |
 
 ---
 
@@ -31,7 +33,8 @@
 | 进程 | 单二进制双角色，`--mcp` 分流 | MCP 必须独立进程，否则 stdio 被 GUI 污染 |
 | 数据 | SQLite + WAL，`repository` 层单点出口 | 双进程并发；前端不用 `tauri-plugin-sql` |
 | 调度 | 单表 `reminder` + 15s 轮询 tick | 轮询天然支持休眠唤醒补偿与去重 |
-| 宠物 | PNG 位图立绘（11 张 WebP / 345KB）+ CSS 特效层 | 形象质量优先；换状态成本低，无需美术资源 |
+| 宠物 | 写实立绘 8 张表情 WebP（521KB）+ CSS 特效层；Q 版归档 | 形象质量优先；加表情只需换脸，不用重画身体 |
+| 动态立绘 | Cubism 运行时，模型本体（moc3 + 贴图）不入库 | 作者授权不允许二次分发；开关只在开发版可见 |
 | MCP | rmcp 3.9.0，stdio transport | 官方 Rust SDK，单二进制无 sidecar |
 
 ---
@@ -65,6 +68,7 @@
 - [x] M6 打磨：无边框面板、开机自启、NSIS 打包
 - [x] M7 分发：GitHub Actions 自动发版 + 应用内检查/下载/安装更新
 - [x] v0.3 交互：摸头 / 戳一戳 / 贴边停靠 / 待机打瞌睡、沉思、摸鱼、发呆、无聊 / 拖拽倾斜 / 落地回弹 / 台词气泡 / 右键与托盘动作菜单
+- [x] v0.3 内容：写实立绘（8 张表情）/ Cubism 动态立绘（仅开发版）/ 面板历史·备忘·工具三页（二维码 · 颜色 · 编解码）/ 笔记与标签 / 自动备份 / 同步骨架
 
 ---
 
@@ -73,19 +77,23 @@
 ```
 whale-reminder/
 ├── src/                      前端（React 19 + TypeScript）
-│   ├── App.tsx               桌宠容器：手势、拖拽倾斜、右键菜单、贴边
+│   ├── App.tsx               桌宠容器：手势、拖拽、右键菜单、贴边
 │   ├── pet/                  立绘渲染、粒子、待机状态机（usePetBehavior）
-│   ├── panel/                待办面板与提醒气泡
-│   └── ui/                   设计令牌（tokens.css）、弹性开关、日期选择器
+│   ├── live2d/               动态立绘：Cubism 运行时、模型封装、落位校正
+│   ├── panel/                待办面板（待办/历史/备忘/工具/设置）与提醒气泡
+│   ├── scan/                 二维码框选与取色吸管浮层
+│   └── ui/                   设计令牌、弹性开关、日期选择器、拖拽改尺寸
 ├── src-tauri/                Rust 侧
-│   ├── src/main.rs           入口（M4 将在此分流 --mcp）
+│   ├── src/main.rs           入口（--mcp 分流）
 │   ├── src/lib.rs            Tauri 装配
-│   ├── src/window.rs         窗口位置恢复与防抖持久化
-│   ├── src/pet.rs            贴边吸附、工作区、探头
-│   ├── src/tray.rs           托盘与动作/贴边菜单
-│   └── src/config.rs         配置文件读写（含 dock 字段）
-├── assets/pet/               立绘素材（WebP + meta.json + 图标）
-├── tools/prepare-art.py      立绘处理脚本
+│   ├── src/repository/       SQLite 单点出口（task / reminder / note / tag）
+│   ├── src/scheduler.rs      15s 轮询、提醒与追问
+│   ├── src/sync.rs           HLC 逻辑时钟与变更日志（同步骨架）
+│   ├── src/backup.rs         自动备份与恢复
+│   └── src/tray.rs           托盘与动作/贴边菜单
+├── assets/pet-real/          写实立绘（8 张表情 WebP + meta.json）
+├── assets/live2d/            Cubism Core、着色器、模型描述（moc3 / 贴图不入库）
+├── tools/                    素材处理与版本同步脚本
 └── docs/                     设计文档
 ```
 
