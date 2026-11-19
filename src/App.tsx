@@ -72,20 +72,18 @@ const DEV_KEYS: Record<string, PetActivity> = {
  *
  * 托盘菜单在 Rust 侧（`tray.rs`）另有一份，改这里记得同步那边。
  */
-const MENU_STATES: PetActivity[] = [
-  "idle",
-  "react",
-  "think",
-  "slack",
-  "daydream",
-  "bored",
-  "drag",
-  "peek",
-  "doze",
-  "sleep",
-  "work",
-  "eat",
-];
+/**
+ * 「直接演一遍」的状态清单。
+ *
+ * 只放点了**能看出变化**的动作：`idle`（回神）、`react`（抬头）、`daydream`（发呆）、
+ * `drag`（被拖动）、`peek`（探头）在 Live2D 下都落到默认参数（`params.ts` 的
+ * `paramsFor` 没有列它们），静态版也只是换个呼吸曲线，点了像没反应，所以不做菜单项。
+ * 这五种动作仍然由手势和状态机自己驱动，别从 `PetActivity` 里删。
+ *
+ * 另外两条产品决定：打瞌睡和睡觉只留「睡觉」（两个都是闭眼 + zzz，两个入口只会让人
+ * 犹豫）；「坐下干活」只由提醒触发，不放进菜单。
+ */
+const MENU_STATES: PetActivity[] = ["think", "slack", "bored", "sleep", "eat"];
 /** 情绪类，一眼能看出差别的四个 */
 const MENU_MOODS: PetActivity[] = ["happy", "angry", "smug", "sad"];
 
@@ -117,11 +115,10 @@ function PetView() {
   /** 动态立绘加载失败的原因；非 null 就一直用静态图，不再重试 */
   const [liveFailed, setLiveFailed] = useState<string | null>(null);
   const [dock, setDock] = useState<Edge | null>(null);
-  const [tilt, setTilt] = useState(0);
   const [land, setLand] = useState(0);
 
   const behavior = usePetBehavior(Boolean(dock));
-  const { activity, burst } = behavior;
+  const { activity, burst, wag } = behavior;
   /**
    * 真的用动态立绘吗。窗口尺寸和热区比例都跟着它走，所以只算一处。
    *
@@ -154,8 +151,9 @@ function PetView() {
     pressOrigin.current = null;
     window.clearTimeout(settleTimer.current);
     lastMove.current = null;
-    setTilt(0);
     setLand((value) => value + 1);
+    // 松手时甩一下尾巴，给「被放下」一个收尾
+    behaviorRef.current.wagTail();
 
     // 松手速度够快就是「甩出去」：交给 Rust 做滑行和反弹，这里不再吸附贴边，
     // 否则两套逻辑会抢同一个坐标
@@ -265,6 +263,17 @@ function PetView() {
     };
   }, []);
 
+  // 呼出面板：尾巴甩一下打个招呼。面板的显示在 Rust 侧（tray::open_panel），
+  // 前端拿不到「另一个窗口刚被打开」这件事，只能由那边推一条事件过来
+  useEffect(() => {
+    const pending = listen("pet://wag", () => {
+      behaviorRef.current.wagTail();
+    });
+    return () => {
+      void pending.then((unlisten) => unlisten());
+    };
+  }, []);
+
   // 甩出去之后落地：撞过边就委屈一下，再试一次吸附（可能正好停在边上）
   useEffect(() => {
     const pending = listen<boolean>("pet://landed", (event) => {
@@ -322,7 +331,8 @@ function PetView() {
     };
   }, []);
 
-  // 拖拽倾斜：从窗口位移算速度，方向跟手，松手回正
+  // 拖拽速度：从窗口位移算出来，松手时决定是「甩出去」还是落地吸附。
+  // 不再按速度给身体加倾斜——拖动时保持垂直，画面更稳（Live2D 的尾巴自己会动）。
   useEffect(() => {
     const pending = appWindow.onMoved(({ payload }) => {
       if (!dragging.current) return;
@@ -335,7 +345,6 @@ function PetView() {
         const vy = (payload.y - previous.y) / dt;
         // 记下瞬时速度：松手时用它决定要不要甩出去
         velocity.current = { vx, vy, at: now };
-        setTilt(Math.max(-8, Math.min(8, -vx * 9)));
       }
       // 指针事件有可能在 startDragging 之后丢失，用「停手」兜底收尾
       window.clearTimeout(settleTimer.current);
@@ -477,7 +486,6 @@ function PetView() {
           items: [
             { id: "pat", text: "摸摸头", action: () => behaviorRef.current.pat() },
             { id: "poke", text: "戳一戳", action: () => behaviorRef.current.poke() },
-            { id: "wake", text: "叫醒她", action: () => behaviorRef.current.wake() },
             { item: "Separator" },
             {
               text: "动作",
@@ -576,10 +584,10 @@ function PetView() {
           style={style}
           live={live}
           onLiveFail={handleLiveFail}
-          tilt={tilt}
           flip={flip}
           land={land}
           burst={burst}
+          wag={wag}
         />
       </div>
     </div>

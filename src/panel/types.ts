@@ -109,6 +109,12 @@ export interface SearchHit {
   kind: "app" | "file" | "dir";
 }
 
+/** `search_icons` 的返回：某个路径的真实图标 / 缩略图（PNG data URL）；null 表示取不到 */
+export interface SearchIcon {
+  path: string;
+  icon: string | null;
+}
+
 /** `search_query` 的返回，对应 search.rs 的 Hits */
 export interface SearchHits {
   apps: SearchHit[];

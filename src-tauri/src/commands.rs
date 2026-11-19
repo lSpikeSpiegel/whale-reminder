@@ -221,18 +221,15 @@ pub fn set_panel_size(
     settings_view(&app)
 }
 
-/// 进入「录制新快捷键」状态。
+/// 进入「录制新快捷键」状态，返回 `Alt+Space` 是否可用。
 ///
-/// **不是注销热键**，只是让热键回调装死：用户按到当前那个组合时，面板不能被他
-/// 自己收走（录制器就没了）。装死比注销安全——中途被打断也不会把热键弄丢。
+/// **不是注销热键**，只是让热键回调不再 toggle 面板：用户按到当前那个组合时，
+/// 面板不能被他收走（录制器就没了）。同时后端会临时占住 `Alt+Space` 并把按键
+/// 结果推给前端——它不在注册状态时会被系统菜单吃掉，webview 收不到 keydown。
 /// 退出录制态由 `set_panel_shortcut` / `resume_shortcut` / `close_panel` 负责。
 #[tauri::command]
-pub fn begin_shortcut_capture(app: tauri::AppHandle) {
-    use tauri::Manager;
-
-    if let Some(state) = app.try_state::<crate::shortcut::Capturing>() {
-        state.begin();
-    }
+pub fn begin_shortcut_capture(app: tauri::AppHandle) -> bool {
+    crate::shortcut::begin_capture(&app)
 }
 
 /// 换呼出面板的全局快捷键。
@@ -261,11 +258,7 @@ pub fn resume_shortcut(app: tauri::AppHandle) -> SettingsView {
 }
 
 fn end_capture(app: &tauri::AppHandle) {
-    use tauri::Manager;
-
-    if let Some(state) = app.try_state::<crate::shortcut::Capturing>() {
-        state.end();
-    }
+    crate::shortcut::end_capture(app);
 }
 
 /// 注册热键并把实际生效的写法落盘。

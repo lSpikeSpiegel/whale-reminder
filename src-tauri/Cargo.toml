@@ -59,8 +59,17 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+] }
+# 搜索结果的真实图标 / 缩略图。IShellItemImageFactory 只有 COM 接口，windows-sys
+# 是纯声明包没有 vtable，所以这里用 windows（Tauri 本来就依赖它，不新增编译负担）。
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
 ] }
 
 [profile.release]

@@ -30,14 +30,14 @@ interface PetProps {
   live?: boolean;
   /** 动态立绘挂了就回退到静态图，由外面记一笔 */
   onLiveFail?: (reason: string) => void;
-  /** 拖拽倾斜角度（度） */
-  tilt?: number;
   /** 水平镜像：1 正常，-1 翻转（贴左边时朝右看） */
   flip?: number;
   /** 落地回弹计数，变化即重播一次落地动画 */
   land?: number;
   /** 粒子爆发计数 */
   burst?: number;
+  /** 甩尾计数，变化即甩一下（只有 Live2D 有尾巴可甩） */
+  wag?: number;
 }
 
 const FADE_MS = 180;
@@ -166,10 +166,10 @@ export function Pet({
   style,
   live = false,
   onLiveFail,
-  tilt = 0,
   flip = 1,
   land = 0,
   burst = 0,
+  wag = 0,
 }: PetProps) {
   const pose = poseFor(style, activity);
   const eyes = meta?.poses[pose]?.eyes;
@@ -224,7 +224,6 @@ export function Pet({
       : undefined;
 
   const rootStyle = {
-    "--tilt": `${tilt}deg`,
     "--flip": flip,
   } as CSSProperties;
 
@@ -234,7 +233,7 @@ export function Pet({
         <div className="pet__breathe">
           {live ? (
             <Suspense fallback={null}>
-              <Live2DPet activity={activity} onFail={onLiveFail ?? noop} />
+              <Live2DPet activity={activity} wag={wag} onFail={onLiveFail ?? noop} />
             </Suspense>
           ) : (
             <>

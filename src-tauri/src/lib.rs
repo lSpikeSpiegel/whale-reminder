@@ -5,6 +5,8 @@ mod config;
 mod db;
 mod error;
 mod fsutil;
+// 搜索结果的真实图标 / 缩略图（Shell 的 IShellItemImageFactory，Windows 专用）
+mod icons;
 // 系统级闲置时长（Windows 走 GetLastInputInfo），桌宠据此打盹
 mod idle;
 // 「甩出去」的滑行 / 反弹，纯几何
@@ -25,6 +27,9 @@ mod scheduler;
 mod settings;
 // 呼出面板的全局快捷键。只有一条，绑定值存在 settings.json
 mod shortcut;
+// 按掉 Alt+Space 的系统菜单（窗口左上角那份「还原 / 移动 / 关闭」）
+#[cfg(windows)]
+mod sysmenu;
 // 写路径的统一入口（推进 HLC + 投 outbox），也被 repository 反过来调用
 mod sync;
 mod tools;
@@ -50,9 +55,9 @@ pub fn run() {
             // 热键事件按下 / 松开各来一条，这里只放行按下——两条都处理的话，
             // 按一次 Alt+Space 会「打开又立刻收起」，看起来像完全没反应
             tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
+                .with_handler(|app, hotkey, event| {
                     if event.state == tauri_plugin_global_shortcut::ShortcutState::Pressed {
-                        shortcut::on_pressed(app);
+                        shortcut::on_pressed(app, hotkey);
                     }
                 })
                 .build(),
@@ -96,7 +101,7 @@ pub fn run() {
             let settings = settings::load(&handle);
             scheduler::set_bubble_ttl(settings.bubble_seconds);
 
-            // 全局快捷键：默认 Control+Alt+Space，被别的程序占着时自动换一个能用的，
+            // 全局快捷键：默认 Alt+Space，被别的程序占着时自动换一个能用的，
             // 并把实际生效的组合写回配置（设置页显示的就是它）
             commands::bind_panel_shortcut(&handle);
 
@@ -120,7 +125,28 @@ pub fn run() {
                 let _ = panel.show();
             }
 
+            // 窗口是 decorations:false，但 Windows 仍给每个顶层窗口挂着系统菜单：
+            // 焦点在窗口上按 Alt+Space 会弹出「还原 / 移动 / 关闭」。默认热键就是
+            // 这个组合，所以在启动时先把已有的窗口都挂上拦截（见 sysmenu.rs）；
+            // 后建的面板 / 气泡 / 截图浮层在 on_window_event 里补
+            #[cfg(windows)]
+            for (_, window) in app.webview_windows() {
+                sysmenu::block_webview(&window);
+            }
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // 后建的窗口只能等它拿到焦点再补挂子类：Alt+Space 也只有在窗口
+            // 有焦点时才会弹系统菜单，这个时机来得及
+            #[cfg(windows)]
+            if matches!(event, tauri::WindowEvent::Focused(true)) {
+                sysmenu::block_window(window);
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = (window, event);
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_tasks,
@@ -192,6 +218,7 @@ pub fn run() {
             search::search_history,
             search::search_forget,
             search::search_history_clear,
+            icons::search_icons,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

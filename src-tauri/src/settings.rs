@@ -24,13 +24,20 @@ pub const MIN_PANEL_HEIGHT: u32 = 260;
 
 /// 呼出待办面板的全局快捷键默认值。
 ///
-/// **不用 `Alt+Space`**：那是 uTools、PowerToys Run 这类启动器的默认键，装机量很大，
-/// 撞上之后 `RegisterHotKey` 直接返回「已被注册」，功能等于没做。带 Ctrl 的三键
-/// 组合冲突概率低得多，手感也还在空格上。
+/// 选 `Alt+Space` 是手感优先：一只手就能按，和「随手把面板叫出来」的动作最配。
+/// 代价是它也是 uTools、PowerToys Run 这类启动器的默认键，撞上之后 `RegisterHotKey`
+/// 直接返回「已被注册」——所以 `shortcut::bind` 会顺着备选往下试，把**实际绑上的**
+/// 组合写回配置，而不是死守默认值。
+///
+/// 另一件必须配套的事：焦点窗口按 `Alt+Space` 会弹出 Windows 自带的系统菜单
+/// （还原 / 移动 / 关闭）。窗口侧由 `sysmenu.rs` 子类化按掉，删它之前先想清楚。
 ///
 /// 用户可以在设置页直接录制一个新组合（`set_panel_shortcut`），
 /// 或者手改这里对应的 `settings.json` 字段 `panel_shortcut`。
-pub const DEFAULT_PANEL_SHORTCUT: &str = "Control+Alt+Space";
+pub const DEFAULT_PANEL_SHORTCUT: &str = "Alt+Space";
+
+/// 0.4.1 之前的默认值。老配置里存的还是它就跟着换，见 `migrate_shortcut`。
+const LEGACY_PANEL_SHORTCUT: &str = "Control+Alt+Space";
 
 /// 把用户写的快捷键归一化成插件认的规范写法。
 ///
@@ -95,15 +102,51 @@ pub fn normalize_shortcut(raw: &str) -> String {
     out
 }
 
-/// 主键的规范写法：首字母大写，其余小写。
+/// 主键的规范写法。
 ///
 /// 插件是拿大写去比对的（`KEYA` / `SPACE` / `PAGEDOWN`），所以 `keya`、`KeyA`、
-/// `KEYA` 三种写法都能通；这里统一成 `KeyA` 只是为了设置页显示好看，不承担校验。
+/// `KEYA` 三种写法都能通。这里把它们统一成 Code 的标准拼法（`KeyA` / `PageDown`），
+/// 目的是让设置页和 `settings.json` 都好看——**不承担校验**，认不出来的原样保留。
+///
+/// 不能简单「首字母大写、其余小写」：那会把 `KeyS` 变成 `Keys`、`PageDown` 变成
+/// `Pagedown`。插件虽然仍能解析，但设置页会显示成「Alt + Keys」这种莫名其妙的东西。
 fn canonical_key(token: &str) -> String {
     // 中文习惯写法，顺手认一下
     if matches!(token, "空格" | "空格键") {
         return "Space".to_string();
     }
+
+    let upper = token.to_ascii_uppercase();
+
+    // 有规律的几类：KeyA / Digit1 / Numpad0 / F24
+    if let Some(rest) = upper.strip_prefix("KEY") {
+        if rest.len() == 1 && rest.chars().all(|c| c.is_ascii_uppercase()) {
+            return format!("Key{rest}");
+        }
+    }
+    if let Some(rest) = upper.strip_prefix("DIGIT") {
+        if rest.len() == 1 && rest.chars().all(|c| c.is_ascii_digit()) {
+            return format!("Digit{rest}");
+        }
+    }
+    if let Some(rest) = upper.strip_prefix("NUMPAD") {
+        if rest.len() == 1 && rest.chars().all(|c| c.is_ascii_digit()) {
+            return format!("Numpad{rest}");
+        }
+    }
+    if let Some(rest) = upper.strip_prefix('F') {
+        if let Ok(number) = rest.parse::<u8>() {
+            if (1..=24).contains(&number) {
+                return format!("F{number}");
+            }
+        }
+    }
+
+    // 其余已知 Code：按表还原成标准拼法（NumpadAdd / PageDown / BracketLeft…）
+    if let Some(name) = CODE_NAMES.iter().find(|name| name.eq_ignore_ascii_case(token)) {
+        return (*name).to_string();
+    }
+
     let mut chars = token.chars();
     match chars.next() {
         Some(first) => {
@@ -114,6 +157,48 @@ fn canonical_key(token: &str) -> String {
         None => String::new(),
     }
 }
+
+/// 不带规律、需要逐个记的 Code 名。和前端 `Settings.tsx` 的 `NAMED_CODES` 对齐。
+const CODE_NAMES: &[&str] = &[
+    "Space",
+    "Enter",
+    "Escape",
+    "Tab",
+    "Backspace",
+    "Delete",
+    "Insert",
+    "Home",
+    "End",
+    "PageUp",
+    "PageDown",
+    "ArrowUp",
+    "ArrowDown",
+    "ArrowLeft",
+    "ArrowRight",
+    "CapsLock",
+    "NumLock",
+    "ScrollLock",
+    "PrintScreen",
+    "Pause",
+    "Minus",
+    "Equal",
+    "Comma",
+    "Period",
+    "Slash",
+    "Backslash",
+    "Semicolon",
+    "Quote",
+    "BracketLeft",
+    "BracketRight",
+    "Backquote",
+    "NumpadAdd",
+    "NumpadSubtract",
+    "NumpadMultiply",
+    "NumpadDivide",
+    "NumpadDecimal",
+    "NumpadEnter",
+    "NumpadEqual",
+];
 
 
 /// 桌宠立绘风格。
@@ -218,6 +303,12 @@ pub struct Settings {
     /// 呼出待办面板的全局快捷键，写法见 `normalize_shortcut`
     #[serde(default = "default_panel_shortcut")]
     pub panel_shortcut: String,
+    /// 默认快捷键从 `Ctrl+Alt+Space` 换成 `Alt+Space` 时做过一次迁移。
+    ///
+    /// 老配置文件没有这个字段 → `false` → 迁移一次并置 `true`。迁完就别再看它了：
+    /// 用户之后手动选回三键组合，不该每次启动都被改回去。
+    #[serde(default)]
+    pub shortcut_default_migrated: bool,
 }
 
 fn default_bubble_seconds() -> u32 {
@@ -236,6 +327,8 @@ impl Default for Settings {
             pet_style: PetStyle::default(),
             pet_live2d: false,
             panel_shortcut: default_panel_shortcut(),
+            // 出厂就是新默认值，没有要迁的东西
+            shortcut_default_migrated: true,
         }
     }
 }
@@ -250,6 +343,7 @@ impl Settings {
             pet_style: self.pet_style,
             pet_live2d: self.pet_live2d,
             panel_shortcut: normalize_shortcut(&self.panel_shortcut),
+            shortcut_default_migrated: self.shortcut_default_migrated,
         }
     }
 }
@@ -269,9 +363,34 @@ pub fn load<R: Runtime>(app: &AppHandle<R>) -> Settings {
     let Ok(raw) = fs::read_to_string(path) else {
         return Settings::default();
     };
-    serde_json::from_str::<Settings>(&raw)
-        .map(Settings::normalized)
-        .unwrap_or_default()
+    let Ok(parsed) = serde_json::from_str::<Settings>(&raw) else {
+        return Settings::default();
+    };
+
+    let mut settings = parsed.normalized();
+    if migrate_shortcut(&mut settings) {
+        save(app, settings.clone());
+    }
+    settings
+}
+
+/// 把旧默认快捷键换成新的，只做一次。
+///
+/// 返回「是否需要落盘」。只改常量不够：老用户的 `settings.json` 里存的是旧默认值
+/// `Control+Alt+Space`，升级后还会接着用它。这里在第一次读到老配置时换成
+/// `Alt+Space`，并置上标记——之后用户再手动选回三键组合，不会被每次启动改回去。
+///
+/// 标记本身要落盘，所以返回 true 的条件是「标记从 false 变成了 true」，与是否真的
+/// 换了键无关。
+fn migrate_shortcut(settings: &mut Settings) -> bool {
+    if settings.shortcut_default_migrated {
+        return false;
+    }
+    settings.shortcut_default_migrated = true;
+    if settings.panel_shortcut == LEGACY_PANEL_SHORTCUT {
+        settings.panel_shortcut = DEFAULT_PANEL_SHORTCUT.to_string();
+    }
+    true
 }
 
 pub fn save<R: Runtime>(app: &AppHandle<R>, settings: Settings) {
@@ -350,6 +469,14 @@ mod tests {
         // 修饰键顺序固定，别让同一个组合出现两种写法
         assert_eq!(normalize_shortcut("shift+alt+ctrl+p"), "Control+Alt+Shift+P");
         assert_eq!(normalize_shortcut("ctrl + alt + p"), "Control+Alt+P");
+        // Code 名不能被「首字母大写、其余小写」压坏：KeyS ≠ Keys，PageDown ≠ Pagedown
+        assert_eq!(normalize_shortcut("alt+keys"), "Alt+KeyS");
+        assert_eq!(normalize_shortcut("alt+keyS"), "Alt+KeyS");
+        assert_eq!(normalize_shortcut("ctrl+pageDown"), "Control+PageDown");
+        assert_eq!(normalize_shortcut("shift+numpadadd"), "Shift+NumpadAdd");
+        assert_eq!(normalize_shortcut("ctrl+digit1"), "Control+Digit1");
+        assert_eq!(normalize_shortcut("ctrl+numpad0"), "Control+Numpad0");
+        assert_eq!(normalize_shortcut("alt+f24"), "Alt+F24");
     }
 
     #[test]
@@ -376,6 +503,7 @@ mod tests {
             pet_style: PetStyle::Chibi,
             pet_live2d: true,
             panel_shortcut: DEFAULT_PANEL_SHORTCUT.to_string(),
+            shortcut_default_migrated: true,
         })
         .unwrap();
         let back: Settings = serde_json::from_str(&raw).unwrap();
@@ -414,11 +542,56 @@ mod tests {
             pet_style: PetStyle::Real,
             pet_live2d: false,
             panel_shortcut: "Control+Alt+P".to_string(),
+            shortcut_default_migrated: true,
         };
         let raw = serde_json::to_string(&settings).unwrap();
         let back: Settings = serde_json::from_str(&raw).unwrap();
         assert_eq!(back.panel_size, settings.panel_size);
         assert_eq!(back.pet_live2d, settings.pet_live2d);
         assert_eq!(back.panel_shortcut, "Control+Alt+P");
+    }
+
+    #[test]
+    fn old_default_shortcut_migrates_once() {
+        // 老配置：旧默认值 + 没有迁移标记
+        let mut settings = Settings {
+            panel_shortcut: LEGACY_PANEL_SHORTCUT.to_string(),
+            shortcut_default_migrated: false,
+            ..Settings::default()
+        };
+        assert!(migrate_shortcut(&mut settings), "第一次读到老配置应该落盘");
+        assert_eq!(settings.panel_shortcut, DEFAULT_PANEL_SHORTCUT);
+        assert_eq!(settings.panel_shortcut, "Alt+Space");
+        assert!(settings.shortcut_default_migrated);
+
+        // 第二次以及以后：不再动它
+        assert!(!migrate_shortcut(&mut settings));
+        assert_eq!(settings.panel_shortcut, "Alt+Space");
+
+        // 用户后来自己选回三键组合，也不会被启动逻辑改回去
+        settings.panel_shortcut = "Control+Alt+Space".to_string();
+        assert!(!migrate_shortcut(&mut settings));
+        assert_eq!(settings.panel_shortcut, "Control+Alt+Space");
+    }
+
+    #[test]
+    fn migration_keeps_custom_shortcut() {
+        // 老配置里存的是用户自己改过的组合：只补标记，不换键
+        let mut settings = Settings {
+            panel_shortcut: "Alt+Shift+Space".to_string(),
+            shortcut_default_migrated: false,
+            ..Settings::default()
+        };
+        assert!(migrate_shortcut(&mut settings));
+        assert_eq!(settings.panel_shortcut, "Alt+Shift+Space");
+        assert!(settings.shortcut_default_migrated);
+    }
+
+    #[test]
+    fn missing_shortcut_field_defaults_to_alt_space() {
+        // 极老的配置可能整个字段都没有：serde 默认值必须跟着新常量走
+        let parsed: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(parsed.panel_shortcut, "Alt+Space");
+        assert!(!parsed.shortcut_default_migrated);
     }
 }

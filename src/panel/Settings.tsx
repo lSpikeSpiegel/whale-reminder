@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Switch } from "../ui/Switch";
 import { LIVE2D_ENABLED } from "../live2d/availability";
 import type { SettingsView } from "./types";
@@ -17,8 +18,18 @@ interface Props {
 /** 气泡停留时长的三档。再短来不及看清，再长就一直挡着屏幕 */
 const BUBBLE_CHOICES = [10, 15, 30];
 
+/** 单个片段的显示写法：修饰键换成用户熟的叫法，Code 名还原成人按得出来的字 */
+function keyLabel(part: string): string {
+  if (part === "Control") return "Ctrl";
+  if (part === "Super") return "Win";
+  if (part === "Space") return "空格";
+  if (/^Key[A-Z]$/.test(part)) return part.slice(3);
+  if (/^Digit[0-9]$/.test(part)) return part.slice(5);
+  return part;
+}
+
 /**
- * 快捷键的显示写法：`Control+Alt+Space` → `Ctrl + Alt + Space`。
+ * 快捷键的显示写法：`Control+Alt+Space` → `Ctrl + Alt + 空格`。
  *
  * 后端存的是插件认的紧凑写法（好解析），显示时把分隔符两侧撑开、修饰键换成
  * 用户熟的叫法。空串表示一个组合都没绑上（几个备选全被别的程序占着）。
@@ -28,7 +39,7 @@ function shortcutLabel(raw?: string): string {
   return raw
     .split("+")
     .filter(Boolean)
-    .map((part) => (part === "Control" ? "Ctrl" : part === "Super" ? "Win" : part))
+    .map(keyLabel)
     .join(" + ");
 }
 
@@ -164,8 +175,15 @@ export function Settings({ onLayout, onDataChanged, onResetSize }: Props) {
     setCaptureHint(null);
     // 必须在后端真的置位之后再进入录制态：没置位就录，按到当前组合
     // 会走正常的 toggle 把面板收起来，录制器当场没了
-    void invoke("begin_shortcut_capture")
-      .then(() => setCapturing(true))
+    void invoke<boolean>("begin_shortcut_capture")
+      .then((altSpaceReady) => {
+        setCapturing(true);
+        // 后端临时占不住 Alt+Space，说明被别的启动器（uTools / PowerToys）占着；
+        // 这时候按它不会有任何反应，提前说清楚
+        if (!altSpaceReady) {
+          setCaptureHint("Alt+Space 被别的程序占着，暂时录不到它；其它组合可以");
+        }
+      })
       .catch((err) => setError(String(err)));
   }, [busy, view]);
 
@@ -182,6 +200,20 @@ export function Settings({ onLayout, onDataChanged, onResetSize }: Props) {
 
   useEffect(() => {
     if (!capturing) return;
+
+    /**
+     * 注册过的组合会被系统吞掉，webview 收不到 keydown（`Alt+Space` 更特殊：
+     * 没注册时会被窗口的系统菜单吃掉）。后端在录制期间把它临时占住，
+     * 按下后从热键回调推这条事件过来，这里当作一次正常的录制结果。
+     */
+    const pending = listen<string>("shortcut://captured", (event) => {
+      const captured = event.payload;
+      if (captured === "") return;
+      stopCapture();
+      void apply(() =>
+        invoke<SettingsView>("set_panel_shortcut", { shortcut: captured }),
+      );
+    });
 
     const onKeyDown = (event: KeyboardEvent) => {
       // 录制态下按什么都不该漏出去（尤其是别把面板自己的快捷键再触发一次）
@@ -221,7 +253,10 @@ export function Settings({ onLayout, onDataChanged, onResetSize }: Props) {
     };
 
     window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      void pending.then((unlisten) => unlisten());
+    };
   }, [capturing, apply, cancelCapture, stopCapture]);
 
   /**

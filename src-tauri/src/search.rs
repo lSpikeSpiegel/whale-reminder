@@ -21,7 +21,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::RwLock;
+use std::sync::{Mutex, RwLock};
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime};
@@ -813,6 +814,41 @@ pub async fn search_query(
         .map_err(|err| AppError::Other(format!("搜索失败：{err}")))
 }
 
+/// 同一个应用在几秒内只拉起一次。
+///
+/// 触发这个的场景很实际：双击结果的两下都会派发 `click`；或者用户看 IDE 半天没出来，
+/// 重开面板又点了一次。同一个程序被拉起两个实例时，JetBrains 系的 `.port` / `.lock`
+/// 会直接打架（实机报过 `AccessDeniedException: ...\.port` + `Address already in use`）。
+///
+/// 只拦「应用」：同一个文件开两次可能是用户故意的（比如两个窗口对照看）。
+const APP_REOPEN_GUARD: Duration = Duration::from_secs(4);
+static LAST_APP_LAUNCH: Mutex<Option<(String, Instant)>> = Mutex::new(None);
+
+/// 纯判断，拆出来是为了能单测——全局状态在并行测试里不好摆。
+fn repeated_within(
+    last: &Option<(String, Instant)>,
+    path: &str,
+    now: Instant,
+    window: Duration,
+) -> bool {
+    last.as_ref()
+        .is_some_and(|(previous, at)| previous == path && now.duration_since(*at) < window)
+}
+
+fn launched_recently(path: &str) -> bool {
+    match LAST_APP_LAUNCH.lock() {
+        Ok(last) => repeated_within(&last, path, Instant::now(), APP_REOPEN_GUARD),
+        // 锁中毒就当没记录过：宁可多开一次，也别让「打开」按钮失灵
+        Err(_) => false,
+    }
+}
+
+fn remember_launch(path: &str) {
+    if let Ok(mut last) = LAST_APP_LAUNCH.lock() {
+        *last = Some((path.to_string(), Instant::now()));
+    }
+}
+
 /// 打开一条结果，并记进「最近打开」。
 ///
 /// 返回记录之后的历史：前端拿返回值直接重排卡片，不用再问一次（和 `tool_open` 一个套路）。
@@ -841,7 +877,25 @@ pub fn search_open(
             target.display()
         )));
     }
+
+    let is_app = kind.as_deref() == Some("app");
+    let key = target.to_string_lossy().to_string();
+    if is_app && launched_recently(&key) {
+        eprintln!("[search] 刚拉起过，忽略重复请求：{}", target.display());
+        return Ok(load_history());
+    }
+
+    // 自检：ShellExecute 正常应该只有几毫秒。如果是几秒，说明被 DDE / 启动器拖住了，
+    // 那种情况前端把面板藏掉之后用户只会觉得「点了没反应」，得从这行看出来。
+    let started = Instant::now();
     shell_open(&target)?;
+    if is_app {
+        remember_launch(&key);
+    }
+    eprintln!(
+        "[search] ShellExecute 用时 {}ms",
+        started.elapsed().as_millis()
+    );
 
     // 打开成功才记：打不开的条目留在历史里，只会让人反复点到同一个错误
     let fallback = hit_from_path(&target.to_string_lossy());
@@ -1137,6 +1191,39 @@ mod tests {
         assert_eq!(entries.len(), MAX_HISTORY);
         // 排在前面的是最后打开的那几个
         assert_eq!(entries[0].name, format!("文件{}", MAX_HISTORY + 4));
+    }
+
+    #[test]
+    fn repeated_app_launch_is_ignored_within_the_window() {
+        let path = concat!(
+            r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\",
+            r"Android Studio\Android Studio.lnk",
+        )
+        .to_string();
+        let now = Instant::now();
+
+        // 刚拉过：同一个路径要拦（双击、重开面板再点都算同一次）
+        assert!(repeated_within(
+            &Some((path.clone(), now)),
+            &path,
+            now,
+            APP_REOPEN_GUARD
+        ));
+        // 别的应用不受影响
+        assert!(!repeated_within(
+            &Some((path.clone(), now)),
+            r"C:\x\WeChat.lnk",
+            now,
+            APP_REOPEN_GUARD
+        ));
+        // 过了窗口期就放行：用户真想开第二个窗口时不能被永久挡住
+        assert!(!repeated_within(
+            &Some((path.clone(), now - APP_REOPEN_GUARD * 2)),
+            &path,
+            now,
+            APP_REOPEN_GUARD
+        ));
+        assert!(!repeated_within(&None, &path, now, APP_REOPEN_GUARD));
     }
 
     #[test]

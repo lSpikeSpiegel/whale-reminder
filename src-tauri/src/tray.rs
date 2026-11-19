@@ -69,19 +69,16 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     // 动作：和右键菜单同一套动作名与中文名（`src/pet/poses.ts` 的 ACTIVITY_LABEL），
     // 前端按字符串分发。**两边各有一份，改一处要同步另一处**——漏一个不会报错，
     // 只是那个动作在菜单里消失（前端对未知动作有兜底，不会把立绘打成 undefined）。
+    //
+    // 只放点了**能看出变化**的动作：回神 / 抬头 / 发呆 / 被拖动 / 探头 在 Live2D 下
+    // 都是默认参数、静态版也只是换个呼吸曲线，点了像没反应，不做菜单项。
+    // 打瞌睡和睡觉只留「睡觉」；「坐下干活」只由提醒触发，也不放进来。
     let act_pat = MenuItem::with_id(app, "act:pat", "摸摸头", true, None::<&str>)?;
-    let act_react = MenuItem::with_id(app, "act:react", "抬头", true, None::<&str>)?;
     let act_think = MenuItem::with_id(app, "act:think", "沉思", true, None::<&str>)?;
     let act_slack = MenuItem::with_id(app, "act:slack", "摸鱼", true, None::<&str>)?;
-    let act_daydream = MenuItem::with_id(app, "act:daydream", "发呆", true, None::<&str>)?;
     let act_bored = MenuItem::with_id(app, "act:bored", "无聊", true, None::<&str>)?;
-    let act_drag = MenuItem::with_id(app, "act:drag", "被拖动", true, None::<&str>)?;
-    let act_peek = MenuItem::with_id(app, "act:peek", "探头", true, None::<&str>)?;
-    let act_doze = MenuItem::with_id(app, "act:doze", "打瞌睡", true, None::<&str>)?;
     let act_sleep = MenuItem::with_id(app, "act:sleep", "睡觉", true, None::<&str>)?;
-    let act_work = MenuItem::with_id(app, "act:work", "坐下干活", true, None::<&str>)?;
     let act_eat = MenuItem::with_id(app, "act:eat", "吃点心", true, None::<&str>)?;
-    let act_idle = MenuItem::with_id(app, "act:idle", "回神", true, None::<&str>)?;
     let act_happy = MenuItem::with_id(app, "act:happy", "撒个欢", true, None::<&str>)?;
     let act_angry = MenuItem::with_id(app, "act:angry", "生气了", true, None::<&str>)?;
     let act_smug = MenuItem::with_id(app, "act:smug", "得意", true, None::<&str>)?;
@@ -99,19 +96,12 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             &act_pat,
             &act_sep_a,
             // 状态
-            &act_react,
             &act_think,
             &act_slack,
-            &act_daydream,
             &act_bored,
-            &act_drag,
-            &act_peek,
             &act_sep_b,
-            &act_doze,
             &act_sleep,
-            &act_work,
             &act_eat,
-            &act_idle,
             &act_sep_c,
             // 情绪
             &act_happy,
@@ -253,6 +243,8 @@ pub(crate) fn toggle_panel<R: Runtime>(app: &AppHandle<R>) {
         let _ = window.set_focus();
         // 从藏着叫出来才算「唤起」，前端会回到搜索页
         let _ = app.emit_to(PANEL_LABEL, EVENT_SHOWN, ());
+        // 顺手让桌宠甩一下尾巴，给「面板出来了」一个活着的反馈
+        crate::pet::emit_wag(app);
         return;
     }
 
@@ -278,6 +270,7 @@ pub(crate) fn open_panel<R: Runtime>(app: &AppHandle<R>) {
         let _ = window.set_focus();
         if was_hidden {
             let _ = app.emit_to(PANEL_LABEL, EVENT_SHOWN, ());
+            crate::pet::emit_wag(app);
         }
         return;
     }
@@ -343,6 +336,8 @@ fn create_panel<R: Runtime>(app: &AppHandle<R>) {
     }
 
     let _ = window.set_focus();
+    // 窗口是刚建出来的，页面还在加载，但尾巴在另一个窗口上，不受影响
+    crate::pet::emit_wag(app);
 }
 
 /// 面板尺寸的兜底约束。

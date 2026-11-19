@@ -234,6 +234,14 @@
   color: var(--ink-3);
 }
 
+/* 真实图标 / 缩略图：透明底的 app icon 也落在浅色瓷砖上，别裁掉边缘 */
+.search__badge img {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
 .search__text {
   flex: 1;
   min-width: 0;
@@ -372,6 +380,13 @@
 .recent__open .search__badge svg {
   width: 16px;
   height: 16px;
+}
+
+/* 历史卡片大一号：缩略图也更有辨识度 */
+.recent__open .search__badge img {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
 }
 
 .recent__name {

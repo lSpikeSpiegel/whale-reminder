@@ -126,6 +126,8 @@ export interface PetBehavior {
   activity: PetActivity;
   /** 粒子爆发计数，每次摸头 / 撒欢都会 +1，用来重播动画 */
   burst: number;
+  /** 甩尾巴计数，变化即甩一下（Live2D 用） */
+  wag: number;
   /** 摸头 */
   pat: () => void;
   /** 戳一戳（连戳 5 下会生气） */
@@ -140,11 +142,14 @@ export interface PetBehavior {
   touch: () => void;
   /** 冒一句台词 */
   say: (text: string) => void;
+  /** 甩一下尾巴（纯表现，不动动作） */
+  wagTail: () => void;
 }
 
 export function usePetBehavior(docked = false): PetBehavior {
   const [activity, setActivity] = useState<PetActivity>("idle");
   const [burst, setBurst] = useState(0);
+  const [wag, setWag] = useState(0);
 
   const activityRef = useRef<PetActivity>("idle");
   const holdUntilRef = useRef(0);
@@ -181,12 +186,18 @@ export function usePetBehavior(docked = false): PetBehavior {
     lastActiveRef.current = Date.now();
   }, []);
 
+  /** 甩尾巴：纯表现计数，Live2D 那边看到数字变了就播一段衰减的正弦 */
+  const wagTail = useCallback(() => {
+    setWag((value) => value + 1);
+  }, []);
+
   const play = useCallback(
     (next: PetActivity, holdMs = 5_200) => {
       pinnedRef.current = true;
+      wagTail();
       apply(next, holdMs);
     },
-    [apply],
+    [apply, wagTail],
   );
 
   const speakFor = useCallback(
@@ -203,6 +214,7 @@ export function usePetBehavior(docked = false): PetBehavior {
   /** 摸头。冷战期会被顶回来；连摸三下变得意 */
   const pat = useCallback(() => {
     touch();
+    wagTail();
     const now = Date.now();
     pinnedRef.current = true;
 
@@ -222,11 +234,12 @@ export function usePetBehavior(docked = false): PetBehavior {
 
     apply("pat", 1_500);
     speakFor("pat");
-  }, [apply, speakFor, touch]);
+  }, [apply, speakFor, touch, wagTail]);
 
   /** 戳一戳。2.5 秒内戳满 5 下就翻脸 */
   const poke = useCallback(() => {
     touch();
+    wagTail();
     const now = Date.now();
     pinnedRef.current = true;
 
@@ -241,16 +254,18 @@ export function usePetBehavior(docked = false): PetBehavior {
 
     apply("poke", 1_200);
     speakFor("poke", 0.75);
-  }, [apply, speakFor, touch]);
+  }, [apply, speakFor, touch, wagTail]);
 
   const sulk = useCallback(() => {
     pinnedRef.current = true;
+    wagTail();
     apply("sad", 2_600);
     speakFor("sad");
-  }, [apply, speakFor]);
+  }, [apply, speakFor, wagTail]);
 
   const wake = useCallback(() => {
     touch();
+    wagTail();
     const current = activityRef.current;
     const deep = current === "sleep" || current === "doze";
     pinnedRef.current = true;
@@ -260,7 +275,7 @@ export function usePetBehavior(docked = false): PetBehavior {
       return;
     }
     apply("idle", 3_000);
-  }, [apply, say, touch]);
+  }, [apply, say, touch, wagTail]);
 
   // 系统闲置：只有人真的离开才让她睡，人在用电脑时她只是「无聊」
   useEffect(() => {
@@ -331,7 +346,7 @@ export function usePetBehavior(docked = false): PetBehavior {
   }, [apply, speakFor]);
 
   return useMemo(
-    () => ({ activity, burst, pat, poke, play, sulk, wake, touch, say }),
-    [activity, burst, pat, poke, play, sulk, wake, touch, say],
+    () => ({ activity, burst, wag, pat, poke, play, sulk, wake, touch, say, wagTail }),
+    [activity, burst, wag, pat, poke, play, sulk, wake, touch, say, wagTail],
   );
 }

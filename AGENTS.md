@@ -146,6 +146,11 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
   实测宽度虚高 25%、高度只差 3%，落位只有该有的 89%。两个函数都是纯函数，有单测。
   启动日志那行 `[live2d] … 落位正确 / ← 构图不对` 是自检（填充率、贴底、居中三条），
   不对才把画布转储到 `%TEMP%\whale-live2d.png`。别把这行删了——构图错了只有它看得出来。
+- **尾巴甩动必须在物理之后叠**：`Param_Angle_Rotation84`…`89`（`[0]尾巴`…`[5]尾巴`）是
+  physics3 的 Angle Output，物理每帧都会整组覆盖。`WhaleModel.update` 的 `tail` 参数在
+  `physics.evaluate` **之后**按节加角度，并自己夹到参数 min/max；写在前面就是白加。
+  触发点是 `usePetBehavior` 的 `wag` 计数（`play` / `pat` / `poke` / `sulk` / `wake` 各 +1）、
+  呼出面板（Rust `pet::emit_wag` → `pet://wag`）和拖拽结束（`endDrag`）。
 - **只有表情、没有姿势**：PSD 的「动作」组（竖食指 / 举手 / 狗尾草）只补手和袖口，
   原手臂还在，直接叠会变成三只手。真正的姿势变化要接 Live2D 运行时，见
   `docs/07-写实立绘接入.md`。
@@ -250,10 +255,19 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
 
 ### 3.5 呼出面板的全局快捷键
 
-`shortcut.rs`，默认 `Control+Alt+Space`，存 `settings.json` 的 `panel_shortcut`。
+`shortcut.rs`，默认 `Alt+Space`，存 `settings.json` 的 `panel_shortcut`。
 
-- **默认值不是 `Alt+Space`**：uTools、PowerToys Run 都默认吃这个组合，`RegisterHotKey`
-  会直接返回「已被注册」，功能等于没做。改默认值之前先想想装机量。
+- **`Alt+Space` 会被系统菜单截胡**：窗口虽然是 `decorations: false`，Windows 仍给每个
+  顶层窗口挂着系统菜单，焦点窗口按 `Alt+Space` 会在左上角弹出「还原 / 移动 / 关闭」。
+  `sysmenu.rs` 用 `SetWindowSubclass` 吞掉空格的三条 `WM_SYSKEY*` 和
+  `WM_SYSCOMMAND(SC_KEYMENU)`；启动时遍历已有窗口，之后在 `on_window_event` 的焦点
+  事件里补挂。删掉这段，热键每按一次就多弹一个系统菜单。
+- **默认值可能被启动器占着**：uTools、PowerToys Run 都默认吃 `Alt+Space`。被占时
+  `RegisterHotKey` 直接返回「已被注册」，`bind()` 会退到三键组合——这是预期行为，
+  设置页显示的是**实际绑上**的那个，不是用户填的那个。
+- **换默认值必须带迁移**：老配置里存的是旧默认 `Control+Alt+Space`，只改常量的话
+  老用户升级后还是老键。`settings.rs` 的 `migrate_shortcut` 在第一次读到老配置时换掉
+  并置 `shortcut_default_migrated`，只做一次——之后用户自己选回三键组合不会被覆盖。
 - **被占时要自己找退路**：`bind()` 顺着 `FALLBACKS` 往下试，返回**第一个真的绑上的**，
   调用方拿它落盘。只「退回默认值」是没用的——默认值可能同样被占，等于什么都没绑。
 - **按下和松开各来一条事件**，回调里必须筛 `Pressed`，否则一次按键开一次关，
@@ -261,17 +275,25 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
 - **toggle，收起用 `hide` 不用 `close`**：面板里常常正填着表单，销毁等于白填；隐藏后
   再按回来输入还在，而窗口重新拿到焦点时 `Panel.tsx` 会自己 `refresh()`，不会看到旧列表。
   关闭按钮仍然是真关，那是用户的明确意图，不走这里。
-- **录制期间热键「装死」，不注销**：设置页点「改键」之后，用户按的第一个组合很可能就是
+- **录制期间热键不再 toggle**：设置页点「改键」之后，用户按的第一个组合很可能就是
   当前那个。注销再挂回这条路一旦被打断（面板被关、渲染进程崩），热键就永久失效。
-  所以只把 `Capturing` 置位、`on_pressed` 里直接 return。退出录制态的出口有三个：
-  `set_panel_shortcut`、`resume_shortcut`、`close_panel`——少一个就会出现
-  「按了没反应，重启才好」。
+  所以只把 `Capturing` 置位，`on_pressed` 改成「发 `shortcut://captured` 事件」，
+  面板不动。退出录制态的出口有三个：`set_panel_shortcut`、`resume_shortcut`、
+  `close_panel`——少一个就会出现「按了没反应，重启才好」，临时注册的键也会漏在里面。
+- **注册过的组合收不到 keydown，录制走事件**：`RegisterHotKey` 注册过的组合按下去会被
+  系统吞掉，而前端录制器靠 `keydown`。所以录制期间后端把按到的组合从热键回调里推给
+  前端（`shortcut://captured`），前端收到就直接落盘——这顺带解决了「录不到当前组合」
+  的老限制。
+- **`Alt+Space` 是单向门的例外，必须临时注册**：它不在注册状态时会被窗口的系统菜单
+  吃掉（`DefWindowProc` 的 `SC_KEYMENU`），`keydown` 永远到不了 webview——所以把热键
+  改走之后，纯前端录制器再也录不回它。`begin_capture` 因此在录制期间临时注册它，
+  拿到 `WM_HOTKEY` 后当正常结果回传；占不住（被启动器占着）时命令返回 `false`，
+  设置页会提示一句。`end_capture` 的三个出口负责摘掉，别把这段删了。
 - **录制器只认 `e.code`**：插件的主键白名单就是 `keyboard-types` 那套 Code 名字，
   `KeyA` / `Digit1` / `Space` / `ArrowUp` / `Numpad0` 可以直接透传；
   `IntlBackslash`、`NumpadComma` 这类它不认，录之前用 `hotkeyCode()` 挡掉。
-- **录不到「当前正在用的那个组合」，这是系统的锅**：`RegisterHotKey` 注册过的组合
-  按下去会被系统吞掉，webview 根本收不到 `keydown`。所以录制态里按当前那个组合是没
-  反应的——按 Esc 取消，结果一样。别的组合都正常（它们没被注册）。
+- **系统保留的组合仍然录不到也绑不上**：`Win+L`、`Ctrl+Alt+Del`、`Alt+Tab` 这些被
+  系统自己吃掉的，`RegisterHotKey` 也会失败，不是录制器的锅。
 - **必须带修饰键**：裸字母做全局热键会把正常打字全抢走，录制器直接拒绝并给提示。
 - 启动时那行 `[shortcut] 已绑定 …` 是自检：快捷键「按了没反应」时，先看它有没有出现。
 
@@ -352,6 +374,17 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
   Visual Studio Code）。单字查询不开子序列——否则一个「v」满屏都是命中。
 - **结果行不做进场动画**：每敲一个字整屏都换一遍，动画只会变成抖动（待办列表那种
   260ms 落位是给「一次新增一条」用的）。
+- **结果用真实图标 / 缩略图**：`icons.rs` 走 Shell 的 `IShellItemImageFactory` 取 48px
+  PNG（图片是缩略图，其它文件是系统图标），转成 data URL；`search_icons` 一批拿完，
+  前后端各一层缓存，取不到才退回通用 SVG。命令在 `spawn_blocking` 里跑，进去先
+  `CoInitializeEx`；HBITMAP 是**预乘 alpha**，要反预乘再编 PNG，否则透明边发黑
+  （细节在模块头注释）。
+- **点开结果立刻把面板藏掉**，再做 `search_open`。启动 IDE 要好几秒，面板杵在原地
+  会让人以为「没点上」而反复点，同一个程序被拉起两个实例——JetBrains 的 `.port` /
+  `.lock` 会直接报 `AccessDeniedException` + `Address already in use`（实机证据：日志里
+  同一个 `Android Studio.lnk` 连着出现四次打开请求）。两道保险：`OPEN_GUARD_MS`（800ms）
+  吃掉双击的第二下；后端对「应用」还有同路径 4 秒去重（`search.rs` 的
+  `repeated_within`）。失败时把面板 `show` 回来，错误行还在。
 - 搜不到东西时给一条出路：「记为待办」把那句话原样塞进待办输入框（`onDraft`），
   不直接建任务——让人还能改一遍再回车。
 
@@ -407,6 +440,9 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
 - **动作菜单有两份，加动作要同时改**：右键菜单在 `App.tsx`（`MENU_STATES` / `MENU_MOODS`），
   托盘在 `tray.rs`（`act:*`）。漏一处只是那个动作在某个入口里消失；前端在 `pet://action`
   收到未知动作时会忽略并打日志，不会把立绘渲染成 undefined。
+  **菜单只放点了有变化的动作**：回神 / 抬头 / 发呆 / 被拖动 / 探头 在 Live2D 下都是默认
+  参数、静态版也只是换个呼吸曲线，点了像没反应，所以不做菜单项（动作本身还在，由手势和
+  状态机驱动）。打瞌睡和睡觉只留「睡觉」；「坐下干活」只由提醒触发，也不放进菜单。
 - 新增交互要给出可见反馈（台词、状态、动效），不要静默成功。
 - **`.bubble__btn` 自带 `flex: 1`**，放进纵向的 `.bubble__stack` 会按纵向 basis 分高度，
   几行按钮一起被压扁（卡片比内容矮，窗口顶部露出一片透明还挡桌面点击）。栈里的子项要

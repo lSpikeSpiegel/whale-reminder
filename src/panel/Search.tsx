@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { SearchHit, SearchHits, SearchHistoryEntry, SearchStatus } from "./types";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import type {
+  SearchHit,
+  SearchHits,
+  SearchHistoryEntry,
+  SearchIcon,
+  SearchStatus,
+} from "./types";
 import "./search.css";
+
+const panelWindow = getCurrentWindow();
 
 interface Props {
   /** 搜不到东西时的出路：把这句原话丢进待办的输入框 */
@@ -17,6 +26,14 @@ const DEBOUNCE_MS = 130;
 
 /** 每次问后端要多少条。分组之后一屏最多也就十来行，多了纯属浪费 */
 const LIMIT = 20;
+
+/**
+ * 点开一条结果之后，多久内的重复点击算同一次。
+ *
+ * 双击的每一下都会派发 `click`，而面板藏起来之前第二下可能已经在事件队列里了。
+ * 挡掉它，否则同一个 IDE 会被拉起两个实例（`.port` / `.lock` 直接打架）。
+ */
+const OPEN_GUARD_MS = 800;
 
 /**
  * Everything 的下载页。
@@ -65,10 +82,89 @@ const FolderIcon = () => (
   </svg>
 );
 
-function Badge({ kind }: { kind: SearchHit["kind"] }) {
+/**
+ * 图标缓存：面板这次生命周期内，同一个路径只问后端一次。
+ *
+ * 存 `null` 表示「问过了，取不到」，别每次搜索都为同一个坏路径重试。
+ */
+const iconCache = new Map<string, string | null>();
+/** 正在请求中的路径：打字快时两次查询会同时要同一批图标，别重复问 */
+const iconPending = new Set<string>();
+
+/**
+ * 批量取结果图标。
+ *
+ * 图标回来之前先用通用图标顶着，搜索不等图标；一次最多问 60 个路径
+ * （后端还有一层按路径的 PNG 缓存，重复搜索不会重新走 Shell）。
+ */
+function useIcons(paths: string[]): Record<string, string | null> {
+  const [icons, setIcons] = useState<Record<string, string | null>>({});
+  // paths 每次渲染都是新数组，用拼出来的 key 当依赖，避免 effect 空转
+  const key = paths.join("\u0000");
+
+  useEffect(() => {
+    const list = key === "" ? [] : key.split("\u0000");
+    if (list.length === 0) return;
+    let alive = true;
+
+    // 先把缓存过的铺上：同一个路径第二次出现时不要闪回通用图标
+    setIcons((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const path of list) {
+        const cached = iconCache.get(path);
+        if (cached !== undefined && next[path] !== cached) {
+          next[path] = cached;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+
+    const missing = list
+      .filter((path) => !iconCache.has(path) && !iconPending.has(path))
+      .slice(0, 60);
+    if (missing.length === 0) return;
+    for (const path of missing) iconPending.add(path);
+
+    void invoke<SearchIcon[]>("search_icons", { paths: missing })
+      .then((entries) => {
+        for (const entry of entries) iconCache.set(entry.path, entry.icon);
+        if (!alive) return;
+        setIcons((prev) => {
+          const next = { ...prev };
+          for (const entry of entries) next[entry.path] = entry.icon;
+          return next;
+        });
+      })
+      .catch(() => {
+        /* 取不到就继续用通用图标，不影响搜索 */
+      })
+      .finally(() => {
+        for (const path of missing) iconPending.delete(path);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [key]);
+
+  return icons;
+}
+
+function Badge({ kind, icon }: { kind: SearchHit["kind"]; icon?: string | null }) {
   return (
     <span className="search__badge" aria-hidden="true">
-      {kind === "app" ? <AppIcon /> : kind === "dir" ? <FolderIcon /> : <FileIcon />}
+      {icon != null ? (
+        // 系统图标是 48px PNG，显示时缩到 18/24；alt 留空，名字就在旁边
+        <img src={icon} alt="" draggable={false} />
+      ) : kind === "app" ? (
+        <AppIcon />
+      ) : kind === "dir" ? (
+        <FolderIcon />
+      ) : (
+        <FileIcon />
+      )}
     </span>
   );
 }
@@ -133,6 +229,8 @@ export function Search({ onDraft, onBack, token }: Props) {
    * 打字快的时候会有两三个查询同时在飞，慢的那次回来了不能盖掉新的结果。
    */
   const seq = useRef(0);
+  /** 上一次点开结果的时间，用来吃掉双击的第二下 */
+  const lastOpenAt = useRef(0);
 
   const query = text.trim();
 
@@ -207,12 +305,38 @@ export function Search({ onDraft, onBack, token }: Props) {
   /** 按「应用在前、文件在后」摊平，键盘上下走的就是这个顺序 */
   const rows = useMemo(() => (hits === null ? [] : [...hits.apps, ...hits.files]), [hits]);
 
+  /** 结果和最近打开一起去重，批量问一次图标 */
+  const iconPaths = useMemo(() => {
+    const unique = new Set<string>();
+    for (const hit of rows) unique.add(hit.path);
+    for (const entry of recent) unique.add(entry.path);
+    return [...unique];
+  }, [rows, recent]);
+  const icons = useIcons(iconPaths);
+
   // 选中项要跟着滚进来（上下键翻到第十条时，它得在可视区里）
   useEffect(() => {
     rowRefs.current[active]?.scrollIntoView({ block: "nearest" });
   }, [active, rows]);
 
+  /**
+   * 点开一条结果。
+   *
+   * 两条和手感有关的规矩：
+   * 1. **先把面板藏掉再发请求**。启动 IDE 要好几秒，面板杵在原地只会让人以为
+   *    「没点上」而反复点，同一个程序被拉起两个实例（JetBrains 的 `.port` 锁
+   *    当场报 AccessDenied / Address already in use）。uTools 那种「点完就消失」
+   *    才是启动器该有的反馈。
+   * 2. **`OPEN_GUARD_MS` 内只认一次**，见常量注释。
+   */
   const open = useCallback(async (hit: SearchHit) => {
+    const now = Date.now();
+    if (now - lastOpenAt.current < OPEN_GUARD_MS) return;
+    lastOpenAt.current = now;
+
+    // 藏起来失败（比如在纯浏览器里跑）不影响打开，只是少一下反馈
+    const hiding = panelWindow.hide().catch(() => {});
+
     try {
       // 后端顺手记一条「最近打开」，返回值就是重排后的历史，直接铺回去
       setRecent(
@@ -227,6 +351,11 @@ export function Search({ onDraft, onBack, token }: Props) {
       // 界面上是一行红字，但终端里看不到——顺手转一份到 dev 日志，方便排查「点了没反应」
       setError(String(err));
       void invoke("web_log", { message: `[search] 打开失败：${err}` });
+      // 面板已经藏起来了：叫回来让用户看见错误。页面没卸载，查询和错误行都还在
+      void hiding
+        .then(() => panelWindow.show())
+        .then(() => panelWindow.setFocus())
+        .catch(() => {});
     }
   }, []);
 
@@ -397,7 +526,7 @@ export function Search({ onDraft, onBack, token }: Props) {
                       onClick={() => void open(entry)}
                       title={entry.path}
                     >
-                      <Badge kind={entry.kind} />
+                      <Badge kind={entry.kind} icon={icons[entry.path]} />
                       <span className="recent__name">{entry.name}</span>
                       <span className="recent__meta">{agoLabel(entry.at)}</span>
                     </button>
@@ -473,7 +602,7 @@ export function Search({ onDraft, onBack, token }: Props) {
                         onClick={() => void open(hit)}
                         title={hit.path}
                       >
-                        <Badge kind={hit.kind} />
+                        <Badge kind={hit.kind} icon={icons[hit.path]} />
                         <span className="search__text">
                           <span className="search__name">{hit.name}</span>
                           <span className="search__path">{hit.path}</span>

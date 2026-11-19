@@ -20,6 +20,8 @@ pub const EVENT_STYLE: &str = "pet://style";
 pub const EVENT_LANDED: &str = "pet://landed";
 /// 设置页开关了 Live2D 动态立绘
 pub const EVENT_LIVE: &str = "pet://live";
+/// 让桌宠甩一下尾巴（呼出面板等时机）
+pub const EVENT_WAG: &str = "pet://wag";
 const MAIN_LABEL: &str = "main";
 /// 离边缘多近算「想贴上去」（物理像素）
 const SNAP_DISTANCE: i32 = 26;
@@ -299,6 +301,11 @@ pub fn apply_style_size<R: Runtime>(app: &AppHandle<R>, style: crate::settings::
 
 pub fn emit_action<R: Runtime>(app: &AppHandle<R>, action: &str) {
     let _ = app.emit_to(MAIN_LABEL, EVENT_ACTION, action.to_string());
+}
+
+/// 让桌宠甩一下尾巴。纯表现，不改变动作状态；静态立绘下前端会忽略。
+pub fn emit_wag<R: Runtime>(app: &AppHandle<R>) {
+    let _ = app.emit_to(MAIN_LABEL, EVENT_WAG, ());
 }
 
 /// 把桌宠甩出去：松手时的速度决定滑多远，撞到工作区边缘会弹一下。

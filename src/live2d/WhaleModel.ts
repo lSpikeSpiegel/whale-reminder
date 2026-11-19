@@ -35,6 +35,20 @@ const BREATH = [
   [CubismDefaultParameterId.ParamBodyAngleX, 0, 2, 4.5, 1],
 ] as const;
 
+/**
+ * 尾巴的六节旋转参数（`model.physics3.json` 里那条摆动的 Output，顺序就是
+ * `[0]尾巴` … `[5]尾巴`）。它们平时由物理按身体角度驱动，甩尾是在物理算完之后
+ * 再叠一段角度上去——所以不能在 `update()` 开头加。
+ */
+const TAIL_PARAMS = [
+  "Param_Angle_Rotation84",
+  "Param_Angle_Rotation85",
+  "Param_Angle_Rotation86",
+  "Param_Angle_Rotation87",
+  "Param_Angle_Rotation88",
+  "Param_Angle_Rotation89",
+] as const;
+
 function loadImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image();
@@ -228,25 +242,36 @@ export class WhaleModel extends CubismUserModel {
   /** 按参数 id 设值。id 句柄查一次就缓存，别每帧去解析字符串 */
   setParam(id: string, value: number): void {
     if (!this.isInitialized()) return;
+    this.getModel().setParameterValueById(this.idOf(id), value, 1);
+  }
+
+  /** 参数 id → 句柄。框架的 id 管理器是全局表，查字符串有成本，缓存起来 */
+  private idOf(id: string): CubismIdHandle {
     let handle = this._ids.get(id);
     if (!handle) {
       handle = CubismFramework.getIdManager().getId(id);
       this._ids.set(id, handle);
     }
-    this.getModel().setParameterValueById(handle, value, 1);
+    return handle;
   }
 
   /**
    * 每帧驱动。
    *
-   * 顺序有讲究：**呼吸先跑，注视后加，物理最后算**。
-   * 呼吸是「设值」，会把同参数的注视偏移盖掉；物理要读最终角度，
-   * 放前面就会慢一帧。
+   * 顺序有讲究：**呼吸先跑，注视后加，物理最后算，尾巴在物理之后再叠**。
+   * 呼吸是「设值」，会把同参数的注视偏移盖掉；物理要读最终角度，放前面就会慢一帧；
+   * 尾巴六节是物理的 Output，先加会被物理整组覆盖，白费。
    *
    * @param dt 秒
    * @param gaze 光标相对窗口中心的归一化坐标，范围 -1..1
+   * @param tail 六节尾巴的附加角度（度）；undefined 表示这一帧不甩
    */
-  update(dt: number, gaze: { x: number; y: number }, blink: boolean): void {
+  update(
+    dt: number,
+    gaze: { x: number; y: number },
+    blink: boolean,
+    tail?: readonly number[],
+  ): void {
     if (!this.isInitialized()) return;
     const model = this.getModel();
     const ids = CubismDefaultParameterId;
@@ -264,6 +289,21 @@ export class WhaleModel extends CubismUserModel {
     model.addParameterValueById(ids.ParamEyeBallY, gaze.y, 1);
 
     this._physics?.evaluate(model, dt);
+
+    // 甩尾：在物理结果上叠加，自己夹到参数范围内，别让 Core 收到越界值
+    if (tail !== undefined) {
+      for (let index = 0; index < TAIL_PARAMS.length; index += 1) {
+        const offset = tail[index] ?? 0;
+        if (offset === 0) continue;
+        const param = model.getParameterIndex(this.idOf(TAIL_PARAMS[index]));
+        if (param < 0) continue;
+        const value = model.getParameterValueByIndex(param) + offset;
+        const min = model.getParameterMinimumValue(param);
+        const max = model.getParameterMaximumValue(param);
+        model.setParameterValueByIndex(param, Math.min(max, Math.max(min, value)), 1);
+      }
+    }
+
     model.update();
   }
 

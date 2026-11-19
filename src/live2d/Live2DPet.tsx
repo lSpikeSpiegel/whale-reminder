@@ -9,6 +9,8 @@ import "./live2d.css";
 
 interface Props {
   activity: PetActivity;
+  /** 甩尾计数：数字一变就甩一下 */
+  wag?: number;
   /** 任何一步失败都回退到静态立绘，绝不让桌宠开天窗 */
   onFail: (reason: string) => void;
 }
@@ -19,6 +21,47 @@ const FPS = 30;
 const PARAM_TAU = 0.1;
 /** 光标离开后多久把注视收回中间 */
 const GAZE_TAU = 0.25;
+/**
+ * 甩尾：时长（秒）、频率（Hz）、六节尾巴的摆幅（度）。
+ *
+ * 幅度从根到尾递增，再加一点相位差，看起来像一条从身体甩向尾尖的鞭子；
+ * 恒定幅度会让整条尾巴像一块板一样平移。单位是度——这几节是 physics 的
+ * Angle Output，物理本身也在 ±15–30° 之间摆。
+ */
+const WAG_SECONDS = 1.1;
+const WAG_HZ = 2.4;
+const WAG_AMPLITUDE = [3, 4.5, 6, 7.5, 9, 10.5];
+
+interface WagState {
+  /** 最近一次收到的计数，用来判断是不是新的一次甩尾 */
+  token: number;
+  /** 开始时间（performance.now）；-1 表示当前没在甩 */
+  start: number;
+  /** 甩向哪边，随机，免得每次都一样 */
+  dir: number;
+}
+
+/**
+ * 一帧的甩尾角度。
+ *
+ * 指数衰减的正弦：`sin(2πft - i·φ)` 每节错开 φ，形成行波；前面再乘一个很短的
+ * 渐入，避免第一帧尾尖就从 -9° 开始（看着像抽搐）。衰减完返回 undefined，
+ * 尾巴交还给物理。
+ */
+function tailOffsets(now: number, state: WagState): number[] | undefined {
+  if (state.start < 0) return undefined;
+  const t = (now - state.start) / 1000;
+  if (t >= WAG_SECONDS) {
+    state.start = -1;
+    return undefined;
+  }
+
+  const decay = Math.exp(-2.4 * t) * Math.min(1, t / 0.06);
+  return WAG_AMPLITUDE.map((amp, index) => {
+    const phase = t * Math.PI * 2 * WAG_HZ - index * 0.22;
+    return Math.sin(phase) * decay * amp * state.dir;
+  });
+}
 /**
  * 量落位的那段帧区间（含两端）。
  *
@@ -126,17 +169,30 @@ function dumpPixels(model: WhaleModel): void {
  * Live2D 立绘。
  *
  * 和静态立绘是同一层「皮肤」：外面还是 `.pet__land` / `.pet__breathe` 那套壳，
- * 只是把 `<img>` 换成一块 WebGL 画布。壳上的 CSS 动效（落地回弹、拖拽倾斜、
- * 贴边镜像）继续生效，呼吸和眨眼交给模型自己——所以 `.pet--live` 会关掉
+ * 只是把 `<img>` 换成一块 WebGL 画布。壳上的 CSS 动效（落地回弹、贴边镜像）
+ * 继续生效，呼吸和眨眼交给模型自己——所以 `.pet--live` 会关掉
  * `pet-breathe`，不然会叠成两套呼吸。
  */
-export function Live2DPet({ activity, onFail }: Props) {
+export function Live2DPet({ activity, wag = 0, onFail }: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const modelRef = useRef<WhaleModel | null>(null);
   const activityRef = useRef(activity);
   const gazeRef = useRef({ x: 0, y: 0, tx: 0, ty: 0 });
+  const wagRef = useRef<WagState>({ token: 0, start: -1, dir: 1 });
   const [ready, setReady] = useState(false);
   activityRef.current = activity;
+
+  // 外部（互动 / 菜单动作 / 呼出面板 / 拖拽结束）推一次计数，就甩一下。
+  // 系统开了「减少动态效果」时不甩，和 CSS 那边保持一致。
+  useEffect(() => {
+    if (wag === wagRef.current.token) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    wagRef.current = {
+      token: wag,
+      start: reduced ? -1 : performance.now(),
+      dir: Math.random() < 0.5 ? -1 : 1,
+    };
+  }, [wag]);
 
   const fail = useCallback(
     (err: unknown) => {
@@ -233,7 +289,12 @@ export function Live2DPet({ activity, onFail }: Props) {
 
           gl.clearColor(0, 0, 0, 0);
           gl.clear(gl.COLOR_BUFFER_BIT);
-          model.update(dt, { x: gaze.x, y: gaze.y }, allowsBlink(activityRef.current));
+          model.update(
+            dt,
+            { x: gaze.x, y: gaze.y },
+            allowsBlink(activityRef.current),
+            tailOffsets(now, wagRef.current),
+          );
           // 传设备像素：视口和裁剪空间都以绘图缓冲为准
           model.draw(canvas.width, canvas.height);
 
