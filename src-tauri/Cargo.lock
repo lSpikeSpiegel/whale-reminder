@@ -5714,6 +5714,7 @@ version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "encoding_rs",
  "image",
  "rmcp",
  "rusqlite",
@@ -5729,6 +5730,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "uuid",
+ "windows-sys 0.61.2",
  "xcap",
 ]
 

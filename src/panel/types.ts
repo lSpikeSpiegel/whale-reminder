@@ -100,3 +100,44 @@ export interface Note {
 export interface ToolProps {
   onLayout: () => void;
 }
+
+/** 一条搜索结果，对应 search.rs 的 Hit */
+export interface SearchHit {
+  name: string;
+  /** 完整路径（应用是 .lnk 的路径，交给 ShellExecute 能直接启动目标） */
+  path: string;
+  kind: "app" | "file" | "dir";
+}
+
+/** `search_query` 的返回，对应 search.rs 的 Hits */
+export interface SearchHits {
+  apps: SearchHit[];
+  files: SearchHit[];
+  /** 这批文件结果从哪来的：借了 Everything 的全盘索引，还是只搜了常用目录 */
+  engine: "everything" | "index" | "none";
+  /** 降级原因，直接显示给用户看（比如「Everything 没在运行」） */
+  notice: string | null;
+}
+
+/** `search_status` 的返回，对应 search.rs 的 SearchStatus */
+export interface SearchStatus {
+  /** 找到的 es.exe 路径；null 表示没接上 Everything 的命令行（≠ 没装 Everything） */
+  es: string | null;
+  /** 装了 Everything 本体 */
+  everything: boolean;
+  /** 索引建好没有（后台线程在建，冷启动时会先看到 false） */
+  ready: boolean;
+  apps: number;
+  files: number;
+  /** 本地索引覆盖的目录，降级时要把这几个目录说给用户听 */
+  roots: string[];
+}
+
+/** 一条「最近打开」记录，对应 search.rs 的 HistoryEntry */
+export interface SearchHistoryEntry {
+  name: string;
+  path: string;
+  kind: "app" | "file" | "dir";
+  /** 最后一次打开的时刻（UTC RFC3339），卡片下面那行「3 小时前」靠它算 */
+  at: string;
+}

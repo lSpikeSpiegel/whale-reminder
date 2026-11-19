@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { UpdateBanner } from "./UpdateBanner";
 import { useUpdater } from "./useUpdater";
 import { History } from "./History";
 import { Notes } from "./Notes";
+import { Search } from "./Search";
 import { Settings } from "./Settings";
 import { Tools } from "./Tools";
 import { Switch } from "../ui/Switch";
@@ -23,8 +24,15 @@ import {
 import type { DayBrief, SettingsView, Task } from "./types";
 import "./panel.css";
 
-type Page = "todo" | "notes" | "history" | "tools" | "settings";
+type Page = "search" | "todo" | "notes" | "history" | "tools" | "settings";
 type RecurType = "daily" | "weekly" | "workday" | "holiday";
+
+/**
+ * 面板从「藏着」变回「摆出来」时后端推过来的事件（见 `tray.rs` 的 `EVENT_SHOWN`）。
+ *
+ * 收到它就回到搜索页并把输入框清空：热键唤起是「重新开始」，不应该接着上次那一页。
+ */
+const PANEL_SHOWN = "panel://shown";
 
 const RECUR_TYPES: { value: RecurType; label: string }[] = [
   { value: "daily", label: "每天" },
@@ -67,6 +75,14 @@ const TodoIcon = () => (
   </svg>
 );
 
+/** 搜索：一个放大镜。放在导航最上面，它是面板打开时默认落在的那一页 */
+const SearchIcon = () => (
+  <svg {...iconProps}>
+    <circle cx="7.2" cy="7.2" r="4.4" />
+    <path d="M10.5 10.5 14 14" />
+  </svg>
+);
+
 const HistoryIcon = () => (
   <svg {...iconProps}>
     <circle cx="8" cy="8" r="5.7" />
@@ -102,6 +118,7 @@ const ToolsIcon = () => (
 );
 
 const NAV: { key: Page; label: string; Icon: () => React.JSX.Element }[] = [
+  { key: "search", label: "搜索", Icon: SearchIcon },
   { key: "todo", label: "待办", Icon: TodoIcon },
   { key: "history", label: "历史", Icon: HistoryIcon },
   { key: "notes", label: "备忘", Icon: NoteIcon },
@@ -110,6 +127,7 @@ const NAV: { key: Page; label: string; Icon: () => React.JSX.Element }[] = [
 ];
 
 const PAGE_TITLE: Record<Page, string> = {
+  search: "搜索",
   todo: "待办",
   notes: "备忘录",
   history: "历史待办",
@@ -167,7 +185,11 @@ function recurLabel(task: Task): string | null {
 }
 
 export function Panel() {
-  const [page, setPage] = useState<Page>("todo");
+  // 打开面板第一眼就是搜索：这个面板一半的用途是「随手叫出来找点东西」，
+  // 让人先看到一屏待办、再自己点一下搜索，等于每次都多一步
+  const [page, setPage] = useState<Page>("search");
+  /** 每次「唤起」+1，搜索页靠它把输入框和结果清干净（切页会重挂载了，同页则靠它） */
+  const [recall, setRecall] = useState(0);
   /** 工具页进去某个工具后由子页面写进来，换页头标题用；回清单时是 null */
   const [toolTitle, setToolTitle] = useState<string | null>(null);
 
@@ -385,6 +407,19 @@ export function Panel() {
     };
   }, [refresh]);
 
+  // 面板从「藏着」被叫回来：回到搜索页，输入框（连同上次的查询和选中项）清干净。
+  // 只在隐藏→显示时发这条事件，所以窗口只是被别的程序压住、又被提到前面时，
+  // 用户正在填的表单和翻到的页都不会被冲掉。
+  useEffect(() => {
+    const pending = win.listen(PANEL_SHOWN, () => {
+      setPage("search");
+      setRecall((prev) => prev + 1);
+    });
+    return () => {
+      void pending.then((unlisten) => unlisten());
+    };
+  }, []);
+
   const resetForm = () => {
     setTitle("");
     setStartOn(false);
@@ -511,21 +546,25 @@ export function Panel() {
       <nav className="rail" aria-label="主导航">
         <span className="rail__mark" data-tauri-drag-region aria-hidden="true" />
         {NAV.map(({ key, label, Icon }) => (
-          <button
-            key={key}
-            type="button"
-            className={`rail__item${page === key ? " rail__item--on" : ""}`}
-            onClick={() => setPage(key)}
-            aria-current={page === key ? "page" : undefined}
-            aria-label={key === "todo" && pending > 0 ? `${label}，还有 ${pending} 项没做完` : label}
-          >
-            {/* 红点只表示「有没做完的」，不显示数量——数量在列表头，别在导航里再吵一次 */}
-            <span className="rail__icon">
-              <Icon />
-              {key === "todo" && pending > 0 && <span className="rail__dot" aria-hidden="true" />}
-            </span>
-            <span className="rail__label">{label}</span>
-          </button>
+          <Fragment key={key}>
+            <button
+              type="button"
+              className={`rail__item${page === key ? " rail__item--on" : ""}`}
+              onClick={() => setPage(key)}
+              aria-current={page === key ? "page" : undefined}
+              aria-label={key === "todo" && pending > 0 ? `${label}，还有 ${pending} 项没做完` : label}
+            >
+              {/* 红点只表示「有没做完的」，不显示数量——数量在列表头，别在导航里再吵一次 */}
+              <span className="rail__icon">
+                <Icon />
+                {key === "todo" && pending > 0 && <span className="rail__dot" aria-hidden="true" />}
+              </span>
+              <span className="rail__label">{label}</span>
+            </button>
+            {/* 搜索是「取东西」，下面几项是「管东西」。一根短横线把两类分开，
+                免得搜索看起来只是待办旁边又一个并列的页 */}
+            {key === "search" && <span className="rail__sep" aria-hidden="true" />}
+          </Fragment>
         ))}
         <span className="rail__gap" data-tauri-drag-region aria-hidden="true" />
       </nav>
@@ -569,7 +608,18 @@ export function Panel() {
         {/* key 跟着页面变：切页时整块重挂载，页面淡入和列表进场都会重放。
             这一层必须自己撑成 flex 列，否则里面的列表拿不到 flex:1，量高度会错。 */}
         <div className="page" key={page}>
-          {page === "notes" ? (
+          {page === "search" ? (
+            <Search
+              token={recall}
+              onBack={() => setPage("todo")}
+              onDraft={(text) => {
+                // 搜不到东西时那句话往往本身就是件要做的事：原样塞进待办输入框，
+                // 让人还能改一遍再回车，而不是替他直接建一条
+                setTitle(text);
+                setPage("todo");
+              }}
+            />
+          ) : page === "notes" ? (
             <Notes onLayout={fit} />
           ) : page === "history" ? (
             <History onLayout={fit} onDataChanged={() => void refresh()} />

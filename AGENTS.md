@@ -212,7 +212,9 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
 
 ### 3.3 面板左侧导航
 
-`panel` 是「62px 导航 + 内容区」两栏，导航五项：待办 / 历史 / 备忘 / 工具 / 设置。
+`panel` 是「62px 导航 + 内容区」两栏，导航六项：搜索 / 待办 / 历史 / 备忘 / 工具 / 设置。
+**搜索在最上面，下面接一根短横线**——它是「取东西」，其余五项是「管东西」，
+不隔一下的话搜索看着只是待办旁边又一个并列的页。
 
 - 导航项 46×44，图标 17×17（`stroke 1.5`）在上、10.5px 标签在下，竖排居中；
 - 选中态是 `--brand-soft` 底 + `--brand` 字，左侧一根 3px 胶囊指示条。
@@ -221,16 +223,20 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
   `flex: 1; min-height: 0; display: flex; flex-direction: column`，
   否则里面的列表拿不到 `flex: 1`，高度会塌成 0；
 - 页面动画**只用 opacity**。带位移或缩放时 `fit()` 会量到动画中间态，窗口高度要来回收敛；
-- 每个页面都要有一个 `data-page-body` 容器给 `fit()` 量高度；
+- 每个页面都要有一个 `data-page-body` 容器给 `fit()` 量高度。**搜索页是例外**，
+  见 3.8——它的内容每敲一个字都在变，跟着量就是打字时窗口上下抽动；
 - 页面内部改数据（历史页的恢复 / 删除、设置页的清空历史）必须通过 `onDataChanged`
   通知 `Panel` 重拉列表，否则切回待办看到的还是旧数据。
 - **有待办时给待办图标点一颗红点**（6px、`--danger`、2px 白圈），**不显示数量**——
   数量在列表头，导航里再写一遍太吵。没有待办就完全不渲染。
+- **导航总高要卡在 340 以内**（面板 356 高时导航可用 340）：应用标记 21 + 六项 264
+  + 八道 3px 间距 24 + 分隔线 5 + 上下内边距 20 = 334。加第七项之前先重新算一遍，
+  超了会被 `.panel` 的 `overflow: hidden` 直接切掉最后一项（不报错，只是没了）。
 
 ### 3.4 面板是「关了就没」的窗口
 
 关闭按钮不是隐藏，是**真关窗口**（`close_panel` → `window.close()`）。下次打开由
-`open_panel` 按 `tauri.conf.json` 里那份 `panel` 配置重建，页面重新加载——页签回到待办、
+`open_panel` 按 `tauri.conf.json` 里那份 `panel` 配置重建，页面重新加载——页签落在搜索页、
 表单清空。好处是常驻内存只剩桌宠一个 WebView；代价是下面两条必须守：
 
 - **建窗口不能占着主线程**。`build()` 会把创建请求发给事件循环再等回执，在主线程上调
@@ -310,6 +316,59 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
   存在 `data_dir/tool_usage.json`），次数相同的保持 `TOOLS` 里的声明顺序。
   所以数组顺序只是「都没用过时的默认顺序」，加工具时按重要性写就行，不用管位置。
 
+### 3.8 搜索页（面板默认页）
+
+`src/panel/Search.tsx` + `src-tauri/src/search.rs`。**面板打开第一眼就是它**，
+热键唤起也回到它（`panel://shown`）。
+
+- **`panel://shown` 只在「隐藏 → 显示」时发**（`tray.rs`）。窗口本来就在、只是被别的
+  程序压住，那叫「提到前面」，不能把用户正在填的表单和翻到的页冲掉。前端收到它同时做
+  两件事：`setPage("search")` 和 `recall + 1`（搜索页靠这个 token 清空输入框——切页会
+  重挂载，但「本来就在搜索页」时不会，只能靠 props 通知）。
+- **不参与高度自适应**：这一页没有 `data-page-body`。结果每敲一个字都换一批，跟着内容
+  改窗口高度会让面板在打字时上下抽动。窗口保持打开时的尺寸，列表自己滚。
+- **两条腿**：应用 = 扫开始菜单（全局 + 当前用户）和桌面的 `.lnk` / `.url`，几百个文件、
+  毫秒级，永远可用；文件 = 优先交给 Everything，够不着才用「桌面 / 文档 / 下载」的本地索引。
+- **文件搜索走 `es.exe`，不走 `Everything64.dll`**：DLL 是同步接口、还能直接拿 UTF-16 路径，
+  但它要求 Everything 安装目录里恰好带着那个 DLL，而且得手写 `unsafe` FFI——DLL 不在时
+  拿不到任何反馈，只能静默失效。CLI 的失败有明确退出码，出问题能看见、能降级。
+  真要压延迟再换 DLL，接口都收在 `run_es` 一处。
+- **`es.exe` 的三个坑**：`-i` 是「区分大小写」（不是忽略），所以别传；输出列跟着
+  `es.ini` 和版本变，只能取每行**最后一个制表符后面**那段再按「像不像绝对路径」过滤；
+  退出码 7 = IPC 失败、8 = Everything 没在跑，都当「降级」而不是「出错」。
+  另外它的 stdout 跟着控制台代码页走（中文系统是 GBK），UTF-8 解不开时要按 GB18030 再来一遍，
+  否则中文路径会变成替换字符——路径看着在，就是打不开。
+- **`es.exe` 只在建索引时探一次**，所以搜索页状态行旁边有个「重新检测」（`search_reindex`）：
+  先开面板后装 Everything 的人不用重启。
+- **打开结果走 `ShellExecuteW`**，不拼 `cmd /c start`：路径里的空格、`&`、中文都不好转义，
+  而且 `start` 会把第一个带引号的参数当成窗口标题。`.lnk` 也直接交给它，不用自己解析目标。
+- **「点了没反应」先看这两行日志**：`[search] 已交给系统打开：… → rc=` 和
+  `[search] 打开失败：… → rc=…`。rc ≤ 32 是失败，错误码会被翻成人话（权限、没有打开方式…）。
+  **rc 成立但窗口没出来**，八成不是 ShellExecute 的问题，而是进程环境被污染了——
+  典型是继承到 `ELECTRON_RUN_AS_NODE=1`：Electron 应用会以 Node 模式一闪而过（实测
+  `OpenCode.exe --version` 打印的是 `v24.22.0`）。`lib.rs::scrub_electron_env` 在启动时清掉它，
+  因为本应用常常是从别的 Electron 程序的终端里起来的（IDE 内置终端、启动器、开发时的 shell）。
+- **打分只看名字**（`score`）：完全相等 > 从头匹配 > 命中靠前 > 包含 > 子序列（`vsc` →
+  Visual Studio Code）。单字查询不开子序列——否则一个「v」满屏都是命中。
+- **结果行不做进场动画**：每敲一个字整屏都换一遍，动画只会变成抖动（待办列表那种
+  260ms 落位是给「一次新增一条」用的）。
+- 搜不到东西时给一条出路：「记为待办」把那句话原样塞进待办输入框（`onDraft`），
+  不直接建任务——让人还能改一遍再回车。
+
+**最近打开（搜索页空态）**
+
+- **只记「打开过」的条目，不记搜索词**。回到空输入框时，人想看的是「上次打开的那个文件」，
+  不是「我上周搜过什么」。所以记录写在 `search_open` 里，不在 `search_query` 里。
+- 存 `data_dir/search_history.json`（走 `fsutil::write_atomic`，和 `tool_usage.json` 一个路子），
+  最多 **9 条**（3 列 × 3 行，436 宽的面板里正好一屏）。同一路径只留一行——比路径时忽略
+  大小写和结尾反斜杠（Everything 给目录补的那条）。文件读坏了就当没有历史，不能让搜索页打不开。
+- **打开成功才记**：文件已经被删的条目留在历史里，只会让人反复点到同一个错误。
+- 空输入时铺成网格（`repeat(auto-fill, minmax(92px, 1fr))`，面板拖窄了自动掉成两列）。
+  每张卡片是 `<button>`，右上角的 × 是它的**兄弟节点**——button 不能套 button，
+  套了消除不掉「点叉也把文件打开」。
+- 卡片顺序即数组顺序（后端已经按最近打开排好），前端不再排一次；`search_open` /
+  `search_forget` 都返回整份历史，前端直接替换，不用二次查询。
+
 ---
 
 ## 4. 代码约定
@@ -368,6 +427,7 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
 npx tsc --noEmit -p tsconfig.json                      # 前端类型
 node --experimental-strip-types tools/color-test.mjs    # 前端纯逻辑（颜色换算）
 node --experimental-strip-types tools/codec-test.mjs    # 前端纯逻辑（编解码）
+node --experimental-strip-types tools/json-test.mjs     # 前端纯逻辑（JSON 解析 / 排版）
 node --experimental-strip-types tools/live2d-fit-test.mjs  # 前端纯逻辑（Live2D 落位）
 cd src-tauri && cargo test --lib                        # 后端 138 个用例
 ```

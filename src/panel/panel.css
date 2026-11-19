@@ -36,8 +36,10 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
-  padding: 14px 0 10px;
+  gap: 3px;
+  /* 上下内边距是掐着面板最小高度算的：六项 + 分隔线 + 应用标记，
+     在 356 高的窗口里正好放得下（334 / 340）。再加项就得先来改这里。 */
+  padding: 12px 0 8px;
   /* 靠底色分层，不用描边；只在右侧留一条极淡的分割线 */
   border-right: 1px solid var(--line);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(230, 236, 249, 0.7));
@@ -48,7 +50,7 @@
   flex: none;
   width: 9px;
   height: 9px;
-  margin: 2px 0 12px;
+  margin: 2px 0 10px;
   border-radius: 50%;
   background: linear-gradient(140deg, var(--brand-3), var(--brand));
   box-shadow: 0 0 0 4px rgba(53, 92, 182, 0.12);
@@ -111,6 +113,16 @@
 
 .rail__item:active {
   transform: scale(0.95);
+}
+
+/* 搜索和下面几项不是一类东西：一根极淡的短横线断开。
+   不占满整个宽度——满宽的线会被读成「分割区块」，短横只是「这里换了一组」。 */
+.rail__sep {
+  flex: none;
+  width: 20px;
+  height: 1px;
+  margin: 2px 0;
+  background: var(--line-2);
 }
 
 .rail__item:focus-visible {

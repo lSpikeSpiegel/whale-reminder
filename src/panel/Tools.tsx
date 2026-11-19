@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ToolCodec } from "./ToolCodec";
 import { ToolColor } from "./ToolColor";
+import { ToolJson } from "./ToolJson";
 import { ToolQr } from "./ToolQr";
 import { CodecIcon, ColorIcon, HubIcon, ImageIcon, JsonIcon, QrIcon } from "./toolIcons";
 import type { ToolProps } from "./types";
@@ -79,7 +80,7 @@ const TOOLS: ToolDef[] = [
     name: "JSON 格式化",
     desc: "格式化 · 折叠 · 校验",
     Icon: JsonIcon,
-    View: soon("打算支持粘贴 JSON 后格式化、折叠、定位报错行。"),
+    View: ToolJson,
   },
   {
     key: "codec",

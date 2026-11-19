@@ -54,6 +54,14 @@ impl PendingCheck {
 /// 面板前端监听的事件名，收到后立即检查更新（忽略节流）
 pub const CHECK_UPDATE_EVENT: &str = "update://check";
 
+/// 面板从「藏着」变成「摆出来」时推给前端的事件。
+///
+/// 热键收起走的是 `hide`，窗口和页面都还在，还停在用户上次翻到的那一页。但用户再按
+/// 一次热键是「重新唤起」，期望从干净状态开始——前端收到这条就把页面切回搜索、清空输入框。
+/// **只有隐藏→显示才发**：窗口本来就在、只是被别的程序压住时，那叫「提到前面」，
+/// 不该把用户正在填的表单和翻到的页冲掉。
+pub const EVENT_SHOWN: &str = "panel://shown";
+
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "打开面板", true, None::<&str>)?;
     let hide = MenuItem::with_id(app, "hide", "隐藏桌宠", true, None::<&str>)?;
@@ -243,6 +251,8 @@ pub(crate) fn toggle_panel<R: Runtime>(app: &AppHandle<R>) {
     if !window.is_visible().unwrap_or(false) {
         let _ = window.show();
         let _ = window.set_focus();
+        // 从藏着叫出来才算「唤起」，前端会回到搜索页
+        let _ = app.emit_to(PANEL_LABEL, EVENT_SHOWN, ());
         return;
     }
 
@@ -262,8 +272,13 @@ pub(crate) fn toggle_panel<R: Runtime>(app: &AppHandle<R>) {
 /// 尺寸、透明、无边框这些都从 conf 读，别在这里再抄一遍。
 pub(crate) fn open_panel<R: Runtime>(app: &AppHandle<R>) {
     if let Some(window) = app.get_webview_window(PANEL_LABEL) {
+        // 本来就是藏着的（上次按热键收起 / 别的浮层借走过）才当「唤起」处理
+        let was_hidden = !window.is_visible().unwrap_or(false);
         let _ = window.show();
         let _ = window.set_focus();
+        if was_hidden {
+            let _ = app.emit_to(PANEL_LABEL, EVENT_SHOWN, ());
+        }
         return;
     }
 

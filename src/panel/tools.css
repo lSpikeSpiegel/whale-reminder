@@ -867,12 +867,389 @@
   color: var(--brand);
 }
 
+/* ---------------------------------------------------------------- JSON 格式化 */
+
+/* 一排胶囊：格式化 / 压缩 ｜ 缩进 2 / 4 / Tab。
+   窄面板（320）会自动折成两行，别改成 nowrap。 */
+.json__formats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 「缩进」两个字把两组胶囊隔开，否则一排五个看不出前两个是模式、后三个是缩进 */
+.json__tag {
+  margin-left: 2px;
+  color: var(--ink-4);
+  font-size: 10px;
+}
+
+/* 输入框手写：和编解码页一个高度口径，但换成等宽字体——
+   用户会在这里对着括号数位置，比例字体只会让他更懵 */
+.json__input {
+  display: block;
+  width: 100%;
+  height: 92px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  tab-size: 2;
+  resize: none;
+  outline: none;
+  transition:
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+
+.json__input::placeholder {
+  color: var(--ink-4);
+}
+
+.json__input:focus {
+  border-color: var(--brand-2);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 状态行：左边一行统计 / 报错位置，右边清空 */
+.json__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  min-height: 18px;
+}
+
+.json__stat {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.json__stat--bad {
+  color: var(--danger);
+}
+
+.json__icon {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition:
+    transform 0.16s var(--spring),
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.json__icon:hover {
+  background: var(--surface-2);
+  color: var(--danger);
+}
+
+.json__icon:active {
+  transform: scale(0.9);
+}
+
+.json__icon:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 重复键这类「不致命但会坑人」的提醒。用 warn 色，别用红——
+   红色是「解析失败」，这里格式化是成功的。 */
+.json__warn {
+  margin: 6px 0 0;
+  color: var(--warn);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+/* 结果区：内描边 + 浅底，和编解码页的输出窗口一个口径 */
+.json__out {
+  margin-top: 10px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  overflow: hidden;
+}
+
+.json__out--empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+}
+
+.json__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.json__head-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 复制成功时临时把「格式化结果」换成反馈 */
+.json__head-label--note {
+  color: var(--brand);
+}
+
+.json__link {
+  flex: none;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: color 0.16s var(--ease);
+}
+
+.json__link:hover {
+  color: var(--brand);
+}
+
+.json__link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.json__placeholder {
+  margin: 0;
+  padding: 18px 12px;
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* 代码区自己有滚动条：几百行的报文不能把面板撑到 640 还是看不完。
+   纵向限高、横向留给长键名，两个方向都能滚。 */
+.json__code {
+  max-height: 240px;
+  padding: 8px 10px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.json__line {
+  display: flex;
+  align-items: center;
+  min-height: 19px;
+  white-space: pre;
+}
+
+/* 每层 12px 由行内 style 给宽度，这里只保证不吃 flex 的伸缩 */
+.json__indent {
+  flex: none;
+}
+
+/* 折叠三角：展开时朝下，折起来时朝右。图形只有 12px，用 ::after 把热区
+   撑到 18px——不然要点两三次才中 */
+.json__fold {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  margin-right: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition: color 0.16s var(--ease);
+}
+
+.json__fold::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 4px;
+}
+
+.json__fold svg {
+  transform: rotate(90deg);
+  transition: transform 0.18s var(--spring);
+}
+
+.json__fold--off svg {
+  transform: rotate(0deg);
+}
+
+.json__fold:hover {
+  color: var(--brand);
+}
+
+.json__fold:focus-visible {
+  outline: none;
+  border-radius: 3px;
+  box-shadow: 0 0 0 2px var(--brand-ring);
+}
+
+/* 不是容器、没有三角的行：占住同样的宽度，值才能上下对齐 */
+.json__fold--none {
+  pointer-events: none;
+}
+
+.json__key {
+  color: var(--json-key);
+}
+
+.json__punct {
+  color: var(--ink-4);
+}
+
+.json__brace {
+  color: var(--ink-3);
+}
+
+/* 「… 3 项」是折叠后的摘要，比正文小一号，避免被当成真实内容 */
+.json__sum {
+  margin: 0 3px;
+  color: var(--ink-4);
+  font-size: 10.5px;
+}
+
+/* 长字符串折行而不是横向撑开：一行几万字符的 token 很少，
+   但一旦出现，横向滚动条会把这个面板的手感毁掉。 */
+.json__val {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.json__val--string {
+  color: var(--json-str);
+}
+
+.json__val--number {
+  color: var(--json-num);
+}
+
+.json__val--boolean,
+.json__val--null {
+  color: var(--json-lit);
+}
+
+/* 空对象 / 空数组的 {} []：和真的括号一个颜色 */
+.json__val--object,
+.json__val--array {
+  color: var(--ink-3);
+}
+
+/* 报错：位置 + 出错那一行 + 原因。三段竖着排，顺序就是人找错的顺序 */
+.json__err {
+  padding: 9px 10px 10px;
+}
+
+.json__err-where {
+  margin: 0;
+  color: var(--danger);
+  font-size: 10.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.json__err-code {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.json__err-caret {
+  color: var(--danger);
+}
+
+.json__err-msg {
+  margin: 7px 0 0;
+  color: var(--ink-2);
+  font-size: 11.5px;
+  line-height: 1.6;
+}
+
+.json__err .json__link {
+  margin-top: 7px;
+}
+
+/* 压缩结果：一整行没有换行，靠 break-all 强制折开 */
+.json__minified {
+  display: block;
+  width: 100%;
+  max-height: 200px;
+  padding: 9px 10px;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow: auto;
+  cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+
+.json__minified:hover {
+  background: var(--surface-3);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .codec__input,
   .codec__icon,
   .codec__result,
   .codec__row,
-  .scan-row {
+  .scan-row,
+  .json__input,
+  .json__icon,
+  .json__link,
+  .json__fold,
+  .json__fold svg,
+  .json__minified {
     transition-duration: 1ms;
   }
 }

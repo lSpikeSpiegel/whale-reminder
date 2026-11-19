@@ -45,9 +45,23 @@ rxing = { version = "0.9", default-features = false, features = [
 image = { version = "0.25", default-features = false, features = ["png"] }
 base64 = "0.22"
 
+# 面板搜索。调用 Everything 的官方命令行 es.exe，它的输出跟着控制台代码页走
+# （中文系统上是 GBK），UTF-8 解不开时用它兜底，否则中文路径会变成替换字符。
+encoding_rs = "0.8"
+
 # MCP server（--mcp 模式）。default 已含 server + macros，只需补 stdio transport。
 rmcp = { version = "3.9", features = ["transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+# 打开搜索结果用 ShellExecuteW：路径里的空格、引号、中文全交给系统处理，
+# 不自己拼命令行（`cmd /c start` 会把第一个带引号的参数当成窗口标题）。
+# 只用到几个导出函数，用 windows-sys 这种纯声明包，编译成本比 windows 低得多。
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [profile.release]
 codegen-units = 1

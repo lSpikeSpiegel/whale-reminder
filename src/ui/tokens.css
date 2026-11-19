@@ -35,6 +35,13 @@
   --danger-soft: rgba(179, 64, 58, 0.09);
   --warn: #b07d20;
 
+  /* JSON 语法色：只用来区分「键 / 字符串 / 数字 / 字面量」，
+     不参与品牌层级。都压在中低饱和上，几百行铺满也不吵。 */
+  --json-key: #3a4a6b;
+  --json-str: #2f7d63;
+  --json-num: #a4622c;
+  --json-lit: #7a5cc4;
+
   /* 面 */
   --surface: #ffffff;
   --surface-2: #f4f6fd;
@@ -68,6 +75,8 @@
   --on-scrim-dim: rgba(255, 255, 255, 0.55);
 
   --font: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  /* 代码 / JSON 用等宽：缩进和逗号对不齐的话，格式化就白做了 */
+  --mono: ui-monospace, "Cascadia Mono", "Consolas", "Microsoft YaHei", monospace;
 }
 
 /* ---------------------------------------------------------------- 通用按钮 */

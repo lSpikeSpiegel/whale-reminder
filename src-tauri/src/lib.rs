@@ -19,6 +19,8 @@ mod pet;
 mod recur;
 mod repository;
 mod scanner;
+// 面板搜索：开始菜单应用 + 文件（有 Everything 就借它的全盘索引）
+mod search;
 mod scheduler;
 mod settings;
 // 呼出面板的全局快捷键。只有一条，绑定值存在 settings.json
@@ -36,6 +38,7 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    scrub_electron_env();
     tauri::Builder::default()
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -85,6 +88,9 @@ pub fn run() {
             app.manage(color::PickedColor::default());
             // 设置页录制新快捷键期间，热键回调要装死（别把面板收走）
             app.manage(shortcut::Capturing::default());
+            // 搜索索引的容器。索引本身在后台线程建（见下面的 `search::spawn_build`），
+            // 前端进来时先看到 `ready: false`，自己轮询到建好
+            app.manage(search::SearchIndex::default());
 
             // 气泡停留时长是用户设置，调度器启动前先灌进去
             let settings = settings::load(&handle);
@@ -105,6 +111,8 @@ pub fn run() {
             // 定时备份（6 小时一份、留 7 份）跑在自己的线程上，
             // 不跟 15 秒一跳的调度器混在一起
             backup::spawn(handle.clone());
+            // 搜索索引同理：扫开始菜单和常用目录都算 I/O，等它建完再启动要慢一拍
+            search::spawn_build(&handle);
 
             // 开发期自动打开待办面板，省得每次去托盘里点
             #[cfg(debug_assertions)]
@@ -176,10 +184,41 @@ pub fn run() {
             pet::pet_next_monitor,
             pet::pet_home,
             commands::system_idle,
+            search::search_status,
+            search::search_query,
+            search::search_open,
+            search::search_reveal,
+            search::search_reindex,
+            search::search_history,
+            search::search_forget,
+            search::search_history_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+/// 抹掉 `ELECTRON_RUN_AS_NODE`。
+///
+/// 这是 Electron 的「把自己当 Node 跑」开关，会沿着环境变量一传给所有子进程。
+/// 本应用如果是从某个 Electron 程序的终端里起来的（IDE 的内置终端、某些启动器、
+/// 或者开发时从 WorkBuddy 的 shell 里 `tauri dev`），这个变量就在我们的环境里躺着；
+/// 于是搜索结果里点开的**任何 Electron 应用**（VS Code、OpenCode、uTools…）都会被它
+/// 变成无界面的 Node 进程：进程起来了、窗口永远不出现，用户视角就是「点了没反应」。
+///
+/// 实测：带着这个变量跑 `OpenCode.exe --version` 打印的是 `v24.22.0`（Node 的版本号），
+/// 不是应用的版本。我们自己是 Tauri 不是 Electron，留着它只有坏处。
+#[cfg(windows)]
+fn scrub_electron_env() {
+    if std::env::var_os("ELECTRON_RUN_AS_NODE").is_none() {
+        return;
+    }
+    // SAFETY: 在 `run()` 最开头调用，此时进程还单线程，没有别的线程读环境变量
+    unsafe { std::env::remove_var("ELECTRON_RUN_AS_NODE") };
+    eprintln!("[env] 已清掉 ELECTRON_RUN_AS_NODE —— 否则启动的 Electron 应用会变成无界面进程");
+}
+
+#[cfg(not(windows))]
+fn scrub_electron_env() {}
 
 /// 首次运行时默认开启开机自启。
 ///

@@ -1,0 +1,476 @@
+/* 搜索页：一个输入框 + 分组结果。
+ *
+ * 这一页**不参与面板高度自适应**（没有 `data-page-body`）。列表内容每敲一个字都在变，
+ * 跟着内容改窗口高度会让面板在打字时上下抽动；保持窗口原样、让列表自己滚，稳得多。
+ */
+
+.search {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 12px;
+}
+
+/* ---------------------------------------------------------------- 输入框 */
+
+.search__box {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  margin: 2px 16px 0;
+  padding: 0 10px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  transition:
+    border-color 0.18s var(--ease),
+    box-shadow 0.18s var(--ease);
+}
+
+.search__box:focus-within {
+  border-color: var(--brand-2);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.search__glyph {
+  flex: none;
+  display: flex;
+  color: var(--ink-4);
+  transition: color 0.18s var(--ease);
+}
+
+.search__box:focus-within .search__glyph {
+  color: var(--brand);
+}
+
+/* 输入框自己不要边框和焦点圈：焦点态由外层那圈描边表达，两个一起亮会脏 */
+.search__input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+}
+
+.search__input::placeholder {
+  color: var(--ink-4);
+}
+
+.search__clear {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease),
+    transform 0.14s var(--spring);
+}
+
+.search__clear:hover {
+  background: var(--line-2);
+  color: var(--ink);
+}
+
+.search__clear:active {
+  transform: scale(0.88);
+}
+
+/* ---------------------------------------------------------------- 引擎状态 */
+
+/* 一行小字说明「这次是怎么搜的」。蓝色留给选中项，这里只用最浅的辅助色 */
+.search__meta {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 6px 18px 2px;
+}
+
+.search__engine {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search__recheck {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: color 0.16s var(--ease);
+}
+
+.search__recheck:hover {
+  color: var(--brand);
+}
+
+/* ---------------------------------------------------------------- 结果 */
+
+.search__body {
+  flex: 1;
+  min-height: 0;
+  margin-top: 2px;
+  padding: 0 10px 4px;
+  overflow-y: auto;
+}
+
+.search__body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.search__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.search__body::-webkit-scrollbar-button {
+  display: none;
+}
+
+.search__body::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(22, 32, 63, 0.14);
+}
+
+.search__body::-webkit-scrollbar-thumb:hover {
+  background: rgba(22, 32, 63, 0.26);
+}
+
+.search__group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 8px 5px;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+
+.search__group-block:first-child .search__group {
+  margin-top: 4px;
+}
+
+.search__group-count {
+  min-width: 16px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--ink-3);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 15px;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.search__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 结果行不做进场动画：每敲一个字整屏都换一遍，动画只会变成抖动 */
+.search__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 4px 3px;
+  padding: 7px 9px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  transition: background 0.14s var(--ease);
+}
+
+.search__row:hover {
+  background: var(--surface-2);
+}
+
+.search__row--on,
+.search__row--on:hover {
+  background: var(--brand-soft);
+}
+
+.search__row--on .search__name {
+  color: var(--brand);
+}
+
+/* 徽章统一用中性色：一屏二十来行，全染成品牌蓝等于没有强调 */
+.search__badge {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-sm);
+  background: linear-gradient(150deg, #ffffff, var(--surface-3));
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-3);
+}
+
+.search__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.search__name {
+  color: var(--ink);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.14s var(--ease);
+}
+
+/* 路径从尾巴上截。名字上面那行已经有了，这里留头一截「C:\Users\…」没意义，
+   但 CSS 没有「截中间」——统一截尾，配合 title 属性看全路径 */
+.search__path {
+  color: var(--ink-4);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search__row--on .search__path {
+  color: var(--ink-3);
+}
+
+/* 「定位」只在悬停 / 选中时露出来，平时不占视线 */
+.search__reveal {
+  flex: none;
+  padding: 3px 7px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.16s var(--ease),
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.search__row:hover .search__reveal,
+.search__row--on .search__reveal {
+  opacity: 1;
+}
+
+.search__reveal:hover {
+  background: var(--surface-3);
+  color: var(--ink-2);
+}
+
+/* ---------------------------------------------------------------- 最近打开 */
+
+/* 标题行右侧的「清空」：很轻，别让人误以为这是个和搜索并列的主操作 */
+.search__group-act {
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  cursor: pointer;
+  transition: color 0.16s var(--ease);
+}
+
+.search__group-act:hover {
+  color: var(--brand);
+}
+
+/* 卡片网格。auto-fill 是必要的：面板能从 320 拖到 2000 宽，
+   固定列数要么在窄面板里把卡片压成一堆字，要么在宽面板里留一大片空 */
+.search__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 6px;
+  margin: 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.recent {
+  position: relative;
+}
+
+.recent__open {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px 8px;
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+  font-family: var(--font);
+  cursor: pointer;
+  transition:
+    transform 0.18s var(--spring),
+    box-shadow 0.18s var(--ease);
+}
+
+.recent__open:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+.recent__open:active {
+  transform: scale(0.97);
+}
+
+.recent__open:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 卡片里的徽章比结果行的大一圈，里面的图标也跟着放大 */
+.recent__open .search__badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.recent__open .search__badge svg {
+  width: 16px;
+  height: 16px;
+}
+
+.recent__name {
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent__meta {
+  color: var(--ink-4);
+  font-size: 10px;
+}
+
+/* 移除按钮压在卡片右上角，平时不显示——不然九张卡片上挂九个叉，像一张待删清单 */
+.recent__del {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-3);
+  color: var(--ink-3);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.16s var(--ease),
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.recent:hover .recent__del,
+.recent__del:focus-visible {
+  opacity: 1;
+}
+
+.recent__del:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ---------------------------------------------------------------- 空态 */
+
+.search__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 30px 14px 24px;
+  text-align: center;
+}
+
+.search__empty-title {
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+.search__empty-note {
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+/* 空态的两个出口（记为待办 / 去装 Everything）并排放，别竖着堆成两块大按钮 */
+.search__empty-acts {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.search__empty-note code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--ink-3);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 10.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search__box,
+  .search__glyph,
+  .search__row,
+  .search__name,
+  .search__clear,
+  .search__reveal,
+  .search__recheck,
+  .search__group-act,
+  .recent__open,
+  .recent__del {
+    transition-duration: 1ms;
+  }
+}
