@@ -1238,6 +1238,354 @@
   background: var(--surface-3);
 }
 
+/* ---------------------------------------------------------------- 行情 */
+
+/* 上面那张卡片：大盘三格 + 搜索框。它没有标题，内边距比 .tool 略小，
+   让「看一眼大盘」和「搜个代码」贴成一件事。 */
+.stock__top {
+  padding: 10px 11px 11px;
+}
+
+/* 大盘三格。它是「今天大概什么样」的背景，不是主操作，
+   所以底色用凹陷面、字号全压小，不跟自选里的数字抢注意力。 */
+.stock__board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.stock__index {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 6px 8px 7px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.stock__index-name {
+  color: var(--ink-3);
+  font-size: 10px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stock__index-price {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock__index-pct {
+  font-size: 10px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 涨跌配色：红涨绿跌（A 股习惯），平盘用辅助灰——停牌和没开盘都没有方向，
+   给它们上色等于报了个假信号。 */
+.stock--up {
+  color: var(--rise);
+}
+
+.stock--down {
+  color: var(--fall);
+}
+
+.stock--flat {
+  color: var(--ink-3);
+}
+
+.stock__search {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* 取消是退路，做成一枚安静的文字按钮——它和「刷新」一样不该抢主操作的视线 */
+.stock__cancel {
+  flex: none;
+  height: 36px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease),
+    transform 0.14s var(--spring);
+}
+
+.stock__cancel:hover {
+  background: var(--surface-2);
+  color: var(--ink-2);
+}
+
+.stock__cancel:active {
+  transform: scale(0.96);
+}
+
+.stock__cancel:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 列表头：标题 + 条数 + 状态 + 刷新。状态吃满剩余宽度并靠右——
+   「已复制 600519」这类反馈比时间戳长，得允许它省略，否则会把刷新挤出去 */
+.stock__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px 6px;
+}
+
+.stock__stamp {
+  flex: 1;
+  min-width: 0;
+  margin-left: auto;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stock__refresh {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-4);
+  cursor: pointer;
+  transition:
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.stock__refresh:hover {
+  background: var(--surface-3);
+  color: var(--ink-2);
+}
+
+.stock__refresh:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 转起来 = 这一轮正在问。数字没变时它就是唯一能看出「点到了」的反馈 */
+.stock__refresh--busy svg {
+  animation: stock-spin 900ms linear infinite;
+}
+
+@keyframes stock-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.stock__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 搜索列表固定高度：结果条数每敲一个字都可能变，让它自己滚，
+   窗口高度就不用跟着抖（高度自适应只在进 / 出搜索时跑一次） */
+.stock__list--search {
+  height: 240px;
+  padding-right: 2px;
+  overflow-y: auto;
+}
+
+.stock__list--search::-webkit-scrollbar {
+  width: 6px;
+}
+
+.stock__list--search::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.stock__list--search::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(22, 32, 63, 0.14);
+}
+
+.stock__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 8px 7px 10px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition:
+    transform 0.18s var(--spring),
+    box-shadow 0.18s var(--ease);
+}
+
+.stock__row:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-2);
+}
+
+/* 整行可点：自选里点哪儿都复制代码，搜索结果里点哪儿都加自选 */
+.stock__row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stock__row-main:disabled {
+  cursor: default;
+}
+
+.stock__row-main:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.stock__id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.stock__name {
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stock__meta {
+  color: var(--ink-4);
+  font-size: 10.5px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 右边两行：现价在上、涨跌额 + 涨跌幅在下。宽度写死，
+   几十行里的数字才会上下对齐，扫一眼就看得出谁红谁绿 */
+.stock__num {
+  flex: none;
+  width: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.stock__price {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock__delta {
+  font-size: 10.5px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+/* 搜索结果右侧的「＋」：宽度固定，加没加过都是同一列，
+   连点几行时不会因为「已在自选」四个字把行宽撑变 */
+.stock__add {
+  flex: none;
+  width: 56px;
+  color: var(--brand);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-align: right;
+}
+
+.stock__row--added .stock__add {
+  color: var(--ink-4);
+  font-size: 10.5px;
+  font-weight: 400;
+}
+
+.stock__row--added .stock__name {
+  color: var(--ink-3);
+}
+
+/* 删除只在悬停时露出来，和待办列表一个手感 */
+.stock__del {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-4);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.16s var(--ease),
+    background 0.16s var(--ease),
+    color 0.16s var(--ease);
+}
+
+.stock__row:hover .stock__del {
+  opacity: 1;
+}
+
+.stock__del:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* 空状态：一句下一步动作，撑成一张卡片，别让面板看着像没加载出来 */
+.stock__hint {
+  margin: 0;
+  padding: 18px 14px 22px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  color: var(--ink-4);
+  font-size: 11.5px;
+  line-height: 1.7;
+  text-align: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .codec__input,
   .codec__icon,
@@ -1247,9 +1595,17 @@
   .json__input,
   .json__icon,
   .json__link,
-  .json__fold,
-  .json__fold svg,
-  .json__minified {
+    .json__fold,
+    .json__fold svg,
+    .json__minified,
+    .stock__row,
+    .stock__cancel,
+    .stock__refresh {
     transition-duration: 1ms;
+  }
+
+  /* 转圈是「正在请求」的唯一反馈，不能整个摘掉，只能放慢 */
+  .stock__refresh--busy svg {
+    animation-duration: 2.4s;
   }
 }

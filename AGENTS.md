@@ -35,6 +35,7 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
 | 品牌 | `--brand` `--brand-2` `--brand-3` | 主色 `#355CB6`，浅色用于描边和悬停 |
 | 品牌淡 | `--brand-soft` `--brand-ring` | 选中底色 / 焦点光圈 |
 | 语义 | `--danger` `--danger-soft` `--warn` | 逾期、错误 |
+| 行情 | `--rise` `--fall` | 涨 / 跌，红涨绿跌（**别复用 `--danger`**，见 3.9） |
 | 面 | `--surface` `--surface-2` `--surface-3` `--line` `--line-2` | 卡片 / 悬停 / 凹陷 / 分割线 |
 | 圆角 | `--r-xl` 20 / `--r-lg` 14 / `--r-md` 10 / `--r-sm` 8 | 面板 / 卡片气泡 / 控件 / 小控件 |
 | 阴影 | `--shadow-1` `--shadow-2` | 卡片 / 悬停抬升 |
@@ -402,6 +403,27 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
 - 卡片顺序即数组顺序（后端已经按最近打开排好），前端不再排一次；`search_open` /
   `search_forget` 都返回整份历史，前端直接替换，不用二次查询。
 
+### 3.9 行情工具（`ToolStock.tsx` + `stock.rs`）
+
+「工具 → 行情」：三个大盘指数 + 搜标的 + 自选涨跌。数据来自东方财富网页版在用的两个
+公开 JSON 接口——搜索回 `QuoteID`（`1.600519` 这样「市场号.代码」），报价接口直接认它。
+
+- **取数放在 Rust，不在前端 `fetch`**：WebView2 里跨域要对方给 CORS 头，这两个接口都不给，
+  前端硬发只会卡在预检上，错误还只有一句 `Failed to fetch`。
+- **自选只存标的，不存价格**：`data_dir/stock_watch.json`（走 `fsutil::write_atomic`），
+  价格每次现问。昨天的收盘价留在本地只会误导人。
+- **`fltt=2` 不能省**：不带它给的是乘过 100 的整数，少这层换算就是「小数点错位」的经典 bug。
+- **停牌回的是 `"-"` 不是数字**，解析时当 `None`（界面显示「—」）。读成 0 会显示成「平盘」，
+  那是错的信息，比空着更糟。
+- **红涨绿跌**用 `--rise` / `--fall`，不要复用 `--danger`——红色在这里是「涨」不是「出错」；
+  涨跌幅是 `null` 时按平盘上灰，别给它上色。
+- **搜索结果和自选共用一块列表区**（互斥显示）：若让结果浮在自选上方，浮层要用 portal + fixed
+  才不被 `.panel` 的 overflow 裁掉，而两层列表叠着时窗口高度每敲一个字都要来回收敛。
+  搜索列表固定 240px 自己滚，`onLayout` 只在「进 / 出搜索」和自选增减时跑。
+- **反馈、搜索状态、更新时刻共用列表头右侧那一格**：再单独吐一行提示会让面板高度随状态跳。
+- 刷新 30 秒一次（切走页面就停）；失败时**保留上一轮的数字**——断网把列表清空，用户会以为自选丢了。
+- 换指数改 `stock.ts` 的 `INDEXES`，secid 写死：`1.000001` 上证 / `0.399001` 深成 / `0.399006` 创业板。
+
 ---
 
 ## 4. 代码约定
@@ -464,8 +486,15 @@ npx tsc --noEmit -p tsconfig.json                      # 前端类型
 node --experimental-strip-types tools/color-test.mjs    # 前端纯逻辑（颜色换算）
 node --experimental-strip-types tools/codec-test.mjs    # 前端纯逻辑（编解码）
 node --experimental-strip-types tools/json-test.mjs     # 前端纯逻辑（JSON 解析 / 排版）
+node --experimental-strip-types tools/stock-test.mjs    # 前端纯逻辑（行情格式化 / 自选对齐）
 node --experimental-strip-types tools/live2d-fit-test.mjs  # 前端纯逻辑（Live2D 落位）
-cd src-tauri && cargo test --lib                        # 后端 138 个用例
+cd src-tauri && cargo test --lib                        # 后端 174 个用例
+```
+
+想确认行情接口本身还活着（改了参数、对方换域名时最先炸的是这里），单独跑：
+
+```bash
+cd src-tauri && cargo test --lib -- --ignored   # 只跑标了 #[ignore] 的真接口冒烟
 ```
 
 两条都过了，**再把 `tauri dev` 起起来留在后台**，用户直接在窗口里点。几条实操：

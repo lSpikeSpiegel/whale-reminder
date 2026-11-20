@@ -68,3 +68,13 @@ export const CodecIcon = () => (
     <path d="M16.4 12.8H5.2M7.6 10.4 5.2 12.8l2.4 2.4" />
   </svg>
 );
+
+/** 行情：两根 K 线（长短不一，才像行情而不是两根柱子） */
+export const StockIcon = () => (
+  <svg {...base}>
+    <path d="M5.2 2.9v2.1M5.2 12.4v2.5" />
+    <rect x="3.6" y="5" width="3.2" height="7.4" rx="1" />
+    <path d="M12.4 5.4v2.2M12.4 14.2v2.2" />
+    <rect x="10.8" y="7.6" width="3.2" height="6.6" rx="1" />
+  </svg>
+);

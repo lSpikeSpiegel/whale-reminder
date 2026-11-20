@@ -4,7 +4,16 @@ import { ToolCodec } from "./ToolCodec";
 import { ToolColor } from "./ToolColor";
 import { ToolJson } from "./ToolJson";
 import { ToolQr } from "./ToolQr";
-import { CodecIcon, ColorIcon, HubIcon, ImageIcon, JsonIcon, QrIcon } from "./toolIcons";
+import { ToolStock } from "./ToolStock";
+import {
+  CodecIcon,
+  ColorIcon,
+  HubIcon,
+  ImageIcon,
+  JsonIcon,
+  QrIcon,
+  StockIcon,
+} from "./toolIcons";
 import type { ToolProps } from "./types";
 import "./tools.css";
 
@@ -53,6 +62,13 @@ const TOOLS: ToolDef[] = [
     desc: "框选认码 · 文字转码",
     Icon: QrIcon,
     View: ToolQr,
+  },
+  {
+    key: "stock",
+    name: "行情",
+    desc: "搜索 · 自选 · 涨跌幅",
+    Icon: StockIcon,
+    View: ToolStock,
   },
   {
     key: "hub",

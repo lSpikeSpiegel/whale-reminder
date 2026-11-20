@@ -139,6 +139,29 @@ export interface SearchStatus {
   roots: string[];
 }
 
+/** 一个标的（搜索结果和自选条目共用），对应 stock.rs 的 StockItem */
+export interface StockItem {
+  /** 数据源的标的编号，「市场号.代码」，如 1.600519 / 116.00700；报价接口原样收 */
+  secid: string;
+  code: string;
+  name: string;
+  /** 市场标签：沪A / 深A / 港股 / 美股 / 基金…（老版本存的自选可能没有） */
+  market: string;
+}
+
+/** 一条报价，对应 stock.rs 的 StockQuote。停牌时价格那几个字段是 null */
+export interface StockQuote {
+  secid: string;
+  code: string;
+  name: string;
+  price: number | null;
+  change: number | null;
+  percent: number | null;
+  prev_close: number | null;
+  /** 价格的小数位（接口的 f1），格式化时照它走 */
+  digits: number;
+}
+
 /** 一条「最近打开」记录，对应 search.rs 的 HistoryEntry */
 export interface SearchHistoryEntry {
   name: string;

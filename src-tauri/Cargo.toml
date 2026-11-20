@@ -49,6 +49,22 @@ base64 = "0.22"
 # （中文系统上是 GBK），UTF-8 解不开时用它兜底，否则中文路径会变成替换字符。
 encoding_rs = "0.8"
 
+# 行情工具取数（东方财富的公开 JSON 接口）。
+# TLS 走 **native-tls**，也就是 Windows 自带的 schannel，不引 rustls：
+# 默认特性会把 aws-lc-rs 拉进来（一个要编 C 和汇编的大块头，构建慢、产物也大），
+# 而本项目只发 Windows 包（.github/workflows/release.yml 只有 windows-latest），
+# 用系统的 TLS 栈还能直接用 Windows 证书库——公司网里装了中间人代理也能通。
+# http2 / system-proxy / charset 显式写出来：关掉 default-features 时不会自动带上，
+# 少了它们这次改动就会悄悄改掉 updater 那边的 reqwest 行为（特性是全局合并的）。
+reqwest = { version = "0.13", default-features = false, features = [
+    "json",
+    "query",
+    "charset",
+    "http2",
+    "system-proxy",
+    "native-tls",
+] }
+
 # MCP server（--mcp 模式）。default 已含 server + macros，只需补 stdio transport。
 rmcp = { version = "3.9", features = ["transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

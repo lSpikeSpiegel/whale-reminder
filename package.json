@@ -11,6 +11,7 @@
     "test:color": "node --experimental-strip-types tools/color-test.mjs",
     "test:codec": "node --experimental-strip-types tools/codec-test.mjs",
     "test:json": "node --experimental-strip-types tools/json-test.mjs",
+    "test:stock": "node --experimental-strip-types tools/stock-test.mjs",
     "test:fit": "node --experimental-strip-types tools/live2d-fit-test.mjs",
     "version:set": "node tools/set-version.mjs"
   },

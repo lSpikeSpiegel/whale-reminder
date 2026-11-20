@@ -23,6 +23,8 @@ mod repository;
 mod scanner;
 // 面板搜索：开始菜单应用 + 文件（有 Everything 就借它的全盘索引）
 mod search;
+// 行情工具：搜标的、自选清单、批量报价（接口取数，所以只能放后端）
+mod stock;
 mod scheduler;
 mod settings;
 // 呼出面板的全局快捷键。只有一条，绑定值存在 settings.json
@@ -195,6 +197,11 @@ pub fn run() {
             scanner::save_qr_image,
             tools::tool_usage,
             tools::tool_open,
+            stock::stock_search,
+            stock::stock_quotes,
+            stock::stock_watch,
+            stock::stock_watch_add,
+            stock::stock_watch_remove,
             color::color_history,
             color::color_remember,
             color::color_clear,
