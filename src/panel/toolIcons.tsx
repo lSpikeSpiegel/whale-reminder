@@ -27,15 +27,6 @@ export const QrIcon = () => (
   </svg>
 );
 
-/** 聚合页：一块通栏 + 两块小的，读起来就是「拼起来的一页」 */
-export const HubIcon = () => (
-  <svg {...base}>
-    <rect x="2.6" y="2.8" width="14.8" height="5.8" rx="1.6" />
-    <rect x="2.6" y="11.4" width="6.4" height="5.8" rx="1.6" />
-    <rect x="11.4" y="11.4" width="6" height="5.8" rx="1.6" />
-  </svg>
-);
-
 /** 颜色转换：一滴颜料，里面一道高光 */
 export const ColorIcon = () => (
   <svg {...base}>
@@ -52,7 +43,6 @@ export const ImageIcon = () => (
     <path d="M3.4 14 7.6 10l2.6 2.3 2.5-2.4 3.9 3.8" />
   </svg>
 );
-
 /** JSON 格式化：一对花括号 */
 export const JsonIcon = () => (
   <svg {...base}>

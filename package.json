@@ -12,6 +12,9 @@
     "test:codec": "node --experimental-strip-types tools/codec-test.mjs",
     "test:json": "node --experimental-strip-types tools/json-test.mjs",
     "test:stock": "node --experimental-strip-types tools/stock-test.mjs",
+    "test:find": "node --experimental-strip-types tools/find-test.mjs",
+    "test:kline": "node --experimental-strip-types tools/kline-test.mjs",
+    "test:image": "node --experimental-strip-types tools/image-test.mjs",
     "test:fit": "node --experimental-strip-types tools/live2d-fit-test.mjs",
     "version:set": "node tools/set-version.mjs"
   },

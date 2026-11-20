@@ -162,6 +162,28 @@ export interface StockQuote {
   digits: number;
 }
 
+/** 一根 K 线，对应 stock.rs 的 Bar。分钟线的时间带时分，日线以上只有日期 */
+export interface StockBar {
+  time: string;
+  open: number;
+  close: number;
+  high: number;
+  low: number;
+  /** 成交量，单位「手」（1 手 = 100 股） */
+  volume: number;
+  /** 成交额，单位「元」 */
+  amount: number;
+}
+
+/** `stock_chart` 的返回，对应 stock.rs 的 Chart */
+export interface StockChartData {
+  bars: StockBar[];
+  /** 昨收。只有分时图用得上（那是 0% 基准线） */
+  prev_close: number | null;
+  /** 价格小数位 */
+  digits: number;
+}
+
 /** 一条「最近打开」记录，对应 search.rs 的 HistoryEntry */
 export interface SearchHistoryEntry {
   name: string;

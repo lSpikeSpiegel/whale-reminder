@@ -1586,6 +1586,555 @@
   text-align: center;
 }
 
+/* ---------------------------------------------------------------- 行情图表 */
+
+/* 图表页：一张卡片装下头部、周期和画布。画布高度写死在组件里（CHART_H），
+   这里只管宽度——宽度由 ResizeObserver 量这个卡片的内容宽度 */
+.stock__detail {
+  padding: 11px 12px 12px;
+}
+
+.stock__detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* 名字 + 代码整块可点（复制代码）：长得像文字，但要有按钮的手感和焦点圈 */
+.stock__id--button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.stock__id--button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+/* 比列表里的 13px 大一号：这一页的主角就是它 */
+.stock__big {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 周期 / 复权 / 均线一行摆开，窄了自动换行（320 宽时六七个胶囊放不下） */
+.stock__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* 一根细竖线把「看哪段行情」和「怎么画」分开 */
+.stock__chips-sep {
+  width: 1px;
+  height: 14px;
+  margin: 0 1px;
+  background: var(--line-2);
+}
+
+/* 画布宽度跟着这个容器走，所以这里不能有内边距，否则量出来比可用宽度大 */
+.stock__canvas-wrap {
+  position: relative;
+  margin-top: 8px;
+}
+
+.stock__canvas {
+  display: block;
+  width: 100%;
+  /* 别让指针移动被当成滚动手势（十字光标要跟手） */
+  touch-action: none;
+  cursor: crosshair;
+}
+
+/* 加载 / 报错 / 没行情：直接盖在画布中央，不额外占一行把窗口顶高 */
+.stock__chart-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-4);
+  font-size: 11.5px;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- 图片处理 */
+
+/* 整页就是一个「放下图片」的容器：拖拽悬停时在四周描一圈虚线，
+   不再另起浮层——浮层会把图盖住，人就看不出自己在换哪一张 */
+.image {
+  position: relative;
+}
+
+.image__panel {
+  padding: 12px;
+}
+
+/* 原生 file input 只用来唤起系统对话框，不给它任何视觉 */
+.image__file {
+  display: none;
+}
+
+/* 空态：一块虚线卡片，整块可点。拖动时鼠标会变成「放进来」的样子 */
+.image__drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 24px 12px 22px;
+  border: 1.5px dashed var(--line-2);
+  border-radius: var(--r-lg);
+  background: var(--surface-2);
+  color: var(--ink-3);
+  font-family: var(--font);
+  cursor: pointer;
+  transition:
+    border-color 0.18s var(--ease),
+    background 0.18s var(--ease),
+    color 0.18s var(--ease);
+}
+
+.image__drop:hover {
+  border-color: var(--brand-3);
+  background: var(--brand-soft);
+  color: var(--brand);
+}
+
+.image__drop:focus-visible {
+  outline: none;
+  border-color: var(--brand-2);
+  box-shadow: 0 0 0 3px var(--brand-ring);
+}
+
+.image__drop-title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.image__drop-note {
+  color: var(--ink-4);
+  font-size: 11px;
+}
+
+.image__drop-cta {
+  margin-top: 4px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  line-height: 26px;
+}
+
+/* 预览：底色用凹陷面，透明 PNG 也能看出边界；图本身按 contain 装进去 */
+.image__preview {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 150px;
+  padding: 6px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.image__preview img {
+  max-width: 100%;
+  max-height: 138px;
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-1);
+  object-fit: contain;
+}
+
+/* 重新编码时只挂一颗小标，不把预览换成「加载中」——图一直在，人才看得出区别 */
+.image__busy {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-3);
+  font-size: 10px;
+  box-shadow: var(--shadow-1);
+}
+
+.image__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 9px;
+}
+
+.image__meta-row {
+  color: var(--ink-4);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 「现在多大」是这一页的结论，比原图那行重要一档 */
+.image__meta-row--now {
+  color: var(--ink-2);
+}
+
+.image__opts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.image__opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 标签列固定宽度，四排胶囊才左对齐（窄面板上也不至于把胶囊挤走） */
+.image__opt-label {
+  flex: none;
+  width: 26px;
+  color: var(--ink-3);
+  font-size: 10.5px;
+}
+
+.image__opt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.image__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 主按钮和「换一张」等高：一个 32 一个 36 会像没对齐 */
+.image__actions .ui-btn {
+  height: 36px;
+}
+
+.image__save {
+  flex: 1;
+}
+
+.image__saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.image__saved-path {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image__saved-open {
+  flex: none;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 6px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: background 0.16s var(--ease);
+}
+
+.image__saved-open:hover {
+  background: var(--brand-ring);
+}
+
+.image__error {
+  margin: 10px 0 0;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------- 图片：批量 */
+
+.image__batch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.image__batch-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+/* 文件夹名可能很长，让它吃掉剩余宽度再省略 */
+.image__batch-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image__batch-count {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  color: var(--ink-3);
+  font-size: 10px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.image__batch-stat {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.image__batch-failed {
+  color: var(--danger);
+}
+
+/* 「只处理了前 N 张」：不是错误，但得让人知道还有没处理的 */
+.image__batch-more {
+  margin: 2px 0 0;
+  color: var(--warn);
+  font-size: 10.5px;
+}
+
+/* 列表自己有上限：一次两百张也不能把保存按钮顶到屏幕外面 */
+.image__batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 176px;
+  margin: 5px 0 0;
+  padding: 4px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  list-style: none;
+  overflow-y: auto;
+}
+
+.image__batch-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.image__batch-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.image__batch-list::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(22, 32, 63, 0.14);
+}
+
+.image__batch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 5px;
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+/* 正在处理的那一行亮一下，一眼看出进度走到哪儿 */
+.image__batch-row--working {
+  background: var(--brand-soft);
+}
+
+.image__batch-file {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image__batch-out {
+  flex: none;
+  color: var(--ink-4);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.image__batch-row--working .image__batch-out {
+  color: var(--brand);
+}
+
+.image__batch-row--failed .image__batch-out {
+  color: var(--danger);
+}
+
+/* 「选项改过了」的提醒：一句话 + 一个就地重跑的按钮 */
+.image__stale {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 9px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  background: var(--warn);
+  color: #ffffff;
+  font-size: 10.5px;
+}
+
+/* 底色是警告色，按钮就反白——再套一层品牌色会糊成一团 */
+.image__stale-act {
+  flex: none;
+  margin-left: auto;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: background 0.16s var(--ease);
+}
+
+.image__stale-act:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.image__stale-act:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- 图片：存哪儿 */
+
+/* 点「保存」之后就地展开，不用浮层：面板的 overflow 会裁掉绝对定位的浮层 */
+.image__ask {
+  margin-top: 10px;
+  padding: 9px 10px 10px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+
+.image__ask-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.image__ask-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.image__ask-cancel {
+  flex: none;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font);
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.image__ask-cancel:hover {
+  background: var(--surface-3);
+  color: var(--ink-2);
+}
+
+.image__ask-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.image__ask-main,
+.image__ask-replace {
+  flex: 1;
+  height: 32px;
+}
+
+/* 「覆盖原图」是不可逆的，给红色边框——别让它和「另存」长得一样 */
+.image__ask-replace {
+  border-color: rgba(179, 64, 58, 0.35);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.image__ask-replace:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.image__ask-note {
+  margin: 7px 0 0;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+/* 拖拽悬停：整页描一圈虚线 + 一句提示 */
+.image--drag::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1.5px dashed var(--brand-3);
+  border-radius: var(--r-lg);
+  background: var(--brand-soft);
+  pointer-events: none;
+}
+
+.image__drop-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  color: var(--brand);
+  font-size: 11.5px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .codec__input,
   .codec__icon,

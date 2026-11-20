@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { copyText } from "../ui/clipboard";
+import { StockChart } from "./StockChart";
 import {
   INDEXES,
   direction,
@@ -49,6 +49,8 @@ export function ToolStock({ onLayout }: ToolProps) {
   const [loading, setLoading] = useState(false);
 
   const [note, setNote] = useState<string | null>(null);
+  /** 正在看哪一只的图表；null 表示还停在列表上 */
+  const [detail, setDetail] = useState<StockItem | null>(null);
 
   const noteTimer = useRef(0);
   /** 搜索的批次号：慢的那次回来时如果又敲过字，结果就该丢掉 */
@@ -151,7 +153,7 @@ export function ToolStock({ onLayout }: ToolProps) {
   // 搜索列表因此给了固定高度，条数变化只让它自己滚。
   useEffect(() => {
     onLayout();
-  }, [onLayout, inSearch, watch.length]);
+  }, [onLayout, inSearch, watch.length, detail]);
 
   const add = (item: StockItem) => {
     invoke<StockItem[]>("stock_watch_add", { item })
@@ -181,10 +183,6 @@ export function ToolStock({ onLayout }: ToolProps) {
       .catch((err) => flash(String(err)));
   };
 
-  const copy = (item: StockItem) => {
-    void copyText(item.code).then((ok) => flash(ok ? `已复制 ${item.code}` : "复制失败"));
-  };
-
   const rows = mergeQuotes(watch, quotes);
   const indexes = mergeQuotes(INDEXES, quotes);
 
@@ -203,7 +201,14 @@ export function ToolStock({ onLayout }: ToolProps) {
     return quoteFailed ? "取不到行情" : null;
   })();
 
-  return (
+  return detail !== null ? (
+    <StockChart
+      item={detail}
+      quote={quotes.find((quote) => quote.secid === detail.secid) ?? null}
+      onBack={() => setDetail(null)}
+      onLayout={onLayout}
+    />
+  ) : (
     <>
       <section className="tool stock__top">
         <div className="stock__board">
@@ -308,8 +313,9 @@ export function ToolStock({ onLayout }: ToolProps) {
               <button
                 type="button"
                 className="stock__row-main"
-                onClick={() => copy(item)}
-                title={`点击复制 ${item.code}`}
+                // 点整行看图（分时 / K 线）；复制代码挪到图表页头，那里点名字就是复制
+                onClick={() => setDetail(item)}
+                title={`查看 ${item.name} 的分时和 K 线`}
               >
                 <span className="stock__id">
                   <span className="stock__name">{item.name}</span>

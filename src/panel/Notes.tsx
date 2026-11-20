@@ -8,6 +8,13 @@ import "./notes.css";
 interface Props {
   /** 内容变化后让面板重新量高度 */
   onLayout: () => void;
+  /**
+   * 从搜索页跳过来时要找的那条备忘。
+   *
+   * 备忘页没有「选中」这个概念（卡片是整块可点即复制），所以这里只做两件事：
+   * 滚到它，然后点亮一下。闪完就归 null，页面的行为跟平常一模一样。
+   */
+  focusId?: string | null;
 }
 
 /**
@@ -18,6 +25,9 @@ interface Props {
  */
 const FOLD_OVER = 90;
 const FOLD_LINES = 4;
+
+/** 从搜索页跳过来时，目标那条点亮多久 */
+const FLASH_MS = 1600;
 
 const isLong = (body: string) => body.length > FOLD_OVER || body.split("\n").length > FOLD_LINES;
 
@@ -194,7 +204,7 @@ function TagManager({
  * 排序交给后端（置顶在前、最近改过的在前），筛选也交给后端（按标签 id 走 SQL），
  * 前端只管把列表摆出来。
  */
-export function Notes({ onLayout }: Props) {
+export function Notes({ onLayout, focusId = null }: Props) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [tags, setTags] = useState<TagView[]>([]);
   const [loading, setLoading] = useState(true);
@@ -227,10 +237,16 @@ export function Notes({ onLayout }: Props) {
   /** 刚复制过的备忘 id，1.6 秒后自己消失（时间那一格会临时变成「已复制」） */
   const [copied, setCopied] = useState<string | null>(null);
 
+  /** 从搜索页跳过来时正点亮的那条，闪完归 null */
+  const [flashNote, setFlashNote] = useState<string | null>(null);
+
   const confirmTimer = useRef(0);
   const copyTimer = useRef(0);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const editRef = useRef<HTMLTextAreaElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+  /** 已经点亮过一次的 id：列表重新加载时别再闪一遍 */
+  const flashedRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -251,6 +267,26 @@ export function Notes({ onLayout }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /**
+   * 滚到搜索页选中的那条并点亮一下。
+   *
+   * 依赖 `notes`：数据是全量拉的，第一次渲染时目标可能还没到，等它到齐再滚才有意义。
+   * `flashedRef` 兜住「列表又变了」的情况——编辑一条备忘会让 notes 换新数组，
+   * 没有这道闸就会每改一次闪一次。
+   */
+  useEffect(() => {
+    if (focusId === null || flashedRef.current === focusId) return;
+
+    const node = listRef.current?.querySelector<HTMLElement>(`[data-note-id="${focusId}"]`);
+    if (node == null) return;
+
+    flashedRef.current = focusId;
+    node.scrollIntoView({ block: "nearest" });
+    setFlashNote(focusId);
+    const timer = window.setTimeout(() => setFlashNote(null), FLASH_MS);
+    return () => window.clearTimeout(timer);
+  }, [focusId, notes]);
 
   useEffect(() => {
     onLayout();
@@ -482,7 +518,7 @@ export function Notes({ onLayout }: Props) {
         )}
       </div>
 
-      <ul className="panel__list" data-page-body>
+      <ul className="panel__list" data-page-body ref={listRef}>
         {notes.map((note) => {
           const long = isLong(note.body);
           const open = opened.includes(note.id);
@@ -539,7 +575,10 @@ export function Notes({ onLayout }: Props) {
           return (
             <li
               key={note.id}
-              className={`note${note.pinned ? " note--pinned" : ""}${copied === note.id ? " note--copied" : ""}`}
+              data-note-id={note.id}
+              className={`note${note.pinned ? " note--pinned" : ""}${
+                copied === note.id ? " note--copied" : ""
+              }${flashNote === note.id ? " note--flash" : ""}`}
               // 整张卡片就是「复制这条」。里面那排按钮（标签、展开、置顶…）各管各的，
               // 点它们不该顺手把正文复制一遍，所以用 closest 拦一道。
               onClick={(event) => {

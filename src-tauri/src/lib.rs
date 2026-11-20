@@ -7,6 +7,8 @@ mod error;
 mod fsutil;
 // 搜索结果的真实图标 / 缩略图（Shell 的 IShellItemImageFactory，Windows 专用）
 mod icons;
+// 图片处理工具的落盘侧：读图成 base64、把处理结果存回去（压缩/裁剪在 canvas 里做）
+mod image;
 // 系统级闲置时长（Windows 走 GetLastInputInfo），桌宠据此打盹
 mod idle;
 // 「甩出去」的滑行 / 反弹，纯几何
@@ -197,8 +199,12 @@ pub fn run() {
             scanner::save_qr_image,
             tools::tool_usage,
             tools::tool_open,
+            image::image_open,
+            image::image_read,
+            image::image_save,
             stock::stock_search,
             stock::stock_quotes,
+            stock::stock_chart,
             stock::stock_watch,
             stock::stock_watch_add,
             stock::stock_watch_remove,

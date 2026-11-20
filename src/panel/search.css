@@ -242,6 +242,12 @@
   object-fit: contain;
 }
 
+/* 小工具自带 20×20 的图标（和工具清单里同一个），徽章只有 24，得缩一档才不顶格 */
+.search__badge--tool svg {
+  width: 15px;
+  height: 15px;
+}
+
 .search__text {
   flex: 1;
   min-width: 0;

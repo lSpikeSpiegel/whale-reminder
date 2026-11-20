@@ -1,12 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { matchNotes, matchTasks, matchTools, snippet } from "./find";
+import { TOOLS } from "./Tools";
+import { formatClock } from "../ui/date";
 import type {
+  Note,
   SearchHit,
   SearchHits,
   SearchHistoryEntry,
   SearchIcon,
   SearchStatus,
+  Task,
 } from "./types";
 import "./search.css";
 
@@ -19,6 +24,14 @@ interface Props {
   onBack: () => void;
   /** 面板每次被唤起都会 +1，用来把这里清干净 */
   token: number;
+  /** 面板已经拉回来的待办（未完成），直接在这里过滤，不再多问一次数据库 */
+  tasks: Task[];
+  /** 点一条工具结果：切到工具页并直接进那个工具 */
+  onOpenTool: (key: string) => void;
+  /** 点一条待办结果：切到待办页并高亮那一条 */
+  onOpenTask: (id: string) => void;
+  /** 点一条备忘结果：切到备忘页并高亮那一条 */
+  onOpenNote: (id: string) => void;
 }
 
 /** 打字停顿多久才发查询。短到不觉得卡，长到不会每敲一个字母起一次进程 */
@@ -26,6 +39,16 @@ const DEBOUNCE_MS = 130;
 
 /** 每次问后端要多少条。分组之后一屏最多也就十来行，多了纯属浪费 */
 const LIMIT = 20;
+
+/**
+ * 自己的东西每组显示几条。
+ *
+ * 工具和备忘本来就不多，三条足够；待办会积到几十条，给四条。总上限锁住是
+ * 为了防止「搜 a」这种宽查询把应用和文件整组挤到屏幕外面去。
+ */
+const TASK_LIMIT = 4;
+const NOTE_LIMIT = 3;
+const TOOL_LIMIT = 3;
 
 /**
  * 点开一条结果之后，多久内的重复点击算同一次。
@@ -81,6 +104,55 @@ const FolderIcon = () => (
     <path d="M2.4 5.2c0-.7.6-1.2 1.2-1.2h2.6l1.4 1.8h4.8c.7 0 1.2.5 1.2 1.2v4.6c0 .7-.5 1.2-1.2 1.2H3.6c-.6 0-1.2-.5-1.2-1.2z" />
   </svg>
 );
+
+/** 待办：一个打了勾的圈，比三条横线更能说明「这条是能做完的」 */
+const TaskIcon = () => (
+  <svg {...iconProps}>
+    <circle cx="8" cy="8" r="5.6" />
+    <path d="M5.6 8.2 7.3 9.9l3.3-3.6" />
+  </svg>
+);
+
+/** 备忘：一张便签，和文件图标的折角区分开（这里没有折角） */
+const NoteIcon = () => (
+  <svg {...iconProps}>
+    <rect x="3" y="2.6" width="10" height="10.8" rx="1.4" />
+    <path d="M5.4 6h5.2M5.4 8.4h5.2M5.4 10.8h3" />
+  </svg>
+);
+
+/**
+ * 搜索页里的一行。
+ *
+ * 应用 / 文件那两类带 `hit`（要取系统图标、能「定位」），自己的东西
+ * （工具 / 待办 / 备忘）只需要 `run`——点下去就是换页面。
+ */
+interface Row {
+  /** React key，也是键盘选中项的身份 */
+  key: string;
+  kind: "tool" | "task" | "note" | "app" | "file" | "dir";
+  title: string;
+  /** 第二行小字：路径 / 一句话说明 / 时间 / 正文片段 */
+  meta: string;
+  hit?: SearchHit;
+  /** 工具自带的图标组件；待办和备忘用上面两个通用图标 */
+  Icon?: () => React.JSX.Element;
+  run: () => void;
+}
+
+/** 待办行第二行：什么时候要做。没定时间就直说，别留一行空白 */
+function taskMeta(task: Task): string {
+  const at = task.due_at ?? task.start_at;
+  return at === null ? "没定时间" : formatClock(at);
+}
+
+/** 备忘行第二行：#标签 · 最后改动。相对时间比完整时刻省地方，也更容易扫 */
+function noteMeta(note: Note): string {
+  const tags = note.tags.map((tag) => `#${tag.name}`).join(" ");
+  const at = agoLabel(note.updated_at);
+  if (tags === "") return at;
+  return at === "" ? tags : `${tags} · ${at}`;
+}
 
 /**
  * 图标缓存：面板这次生命周期内，同一个路径只问后端一次。
@@ -170,6 +242,25 @@ function Badge({ kind, icon }: { kind: SearchHit["kind"]; icon?: string | null }
 }
 
 /**
+ * 结果行左边的图标。
+ *
+ * 应用 / 文件走系统图标（`Badge`），自己的东西用通用图形：小工具用它自己的图标
+ * （和工具清单里同一个，一眼能认出来），待办是勾选圈，备忘是便签。
+ */
+function RowBadge({ row, icon }: { row: Row; icon: string | null }) {
+  if (row.kind === "app" || row.kind === "file" || row.kind === "dir") {
+    return <Badge kind={row.kind} icon={icon} />;
+  }
+
+  const Icon = row.Icon;
+  return (
+    <span className={`search__badge search__badge--${row.kind}`} aria-hidden="true">
+      {Icon !== undefined ? <Icon /> : row.kind === "task" ? <TaskIcon /> : <NoteIcon />}
+    </span>
+  );
+}
+
+/**
  * 这一屏的结果到底是怎么搜出来的，得让用户看得见。
  *
  * 三种情况要分开说：接上了 Everything（全盘）、装了但缺 es.exe（只有常用目录）、
@@ -211,12 +302,25 @@ function agoLabel(at: string): string {
   return `${month}-${day}`;
 }
 
-export function Search({ onDraft, onBack, token }: Props) {
+export function Search({
+  onDraft,
+  onBack,
+  token,
+  tasks,
+  onOpenTool,
+  onOpenTask,
+  onOpenNote,
+}: Props) {
   const [text, setText] = useState("");
   const [hits, setHits] = useState<SearchHits | null>(null);
   const [status, setStatus] = useState<SearchStatus | null>(null);
   /** 最近打开过的应用 / 文件，空输入时铺成网格 */
   const [recent, setRecent] = useState<SearchHistoryEntry[]>([]);
+  /**
+   * 备忘。面板没把备忘缓存在上层（备忘页自己读自己写），所以进这一页时读一次，
+   * 之后每次被唤起再读——比每次都问数据库省，也不会看到别处已经删掉的条目。
+   */
+  const [notes, setNotes] = useState<Note[]>([]);
   const [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -253,6 +357,14 @@ export function Search({ onDraft, onBack, token }: Props) {
       .catch(() => setRecent([]));
   }, []);
 
+  // 备忘：进页面读一次，每次唤起（token 变）再读一次。
+  // 读失败就当没有备忘——搜东西这件事不该被一个次要的数据源拦住
+  useEffect(() => {
+    void invoke<Note[]>("list_notes", { filter: null })
+      .then(setNotes)
+      .catch(() => setNotes([]));
+  }, [token]);
+
   // 索引在后台线程里建，建好之前搜文件是空的。600ms 一问，建好就停。
   useEffect(() => {
     if (status === null || status.ready) return;
@@ -282,13 +394,15 @@ export function Search({ onDraft, onBack, token }: Props) {
     }
 
     setBusy(true);
+    // 换了查询就把选中项收回第一条。**不放在结果回来时**：待办 / 备忘是即时的、
+    // 应用和文件要等 Rust，等文件回来再归零会把用户刚用 ↓ 挪到的位置抢走
+    setActive(0);
     const timer = window.setTimeout(() => {
       const mine = ++seq.current;
       void invoke<SearchHits>("search_query", { text: query, limit: LIMIT })
         .then((result) => {
           if (mine !== seq.current) return;
           setHits(result);
-          setActive(0);
           setError(null);
         })
         .catch((err) => {
@@ -301,23 +415,6 @@ export function Search({ onDraft, onBack, token }: Props) {
 
     return () => window.clearTimeout(timer);
   }, [query]);
-
-  /** 按「应用在前、文件在后」摊平，键盘上下走的就是这个顺序 */
-  const rows = useMemo(() => (hits === null ? [] : [...hits.apps, ...hits.files]), [hits]);
-
-  /** 结果和最近打开一起去重，批量问一次图标 */
-  const iconPaths = useMemo(() => {
-    const unique = new Set<string>();
-    for (const hit of rows) unique.add(hit.path);
-    for (const entry of recent) unique.add(entry.path);
-    return [...unique];
-  }, [rows, recent]);
-  const icons = useIcons(iconPaths);
-
-  // 选中项要跟着滚进来（上下键翻到第十条时，它得在可视区里）
-  useEffect(() => {
-    rowRefs.current[active]?.scrollIntoView({ block: "nearest" });
-  }, [active, rows]);
 
   /**
    * 点开一条结果。
@@ -358,6 +455,99 @@ export function Search({ onDraft, onBack, token }: Props) {
         .catch(() => {});
     }
   }, []);
+
+  /**
+   * 分组的搜索结果。
+   *
+   * 顺序是「离自己由近到远」：自己写下的（待办 / 备忘）→ 自己想用的（工具）→
+   * 机器上的（应用 / 文件）。组内按相关度排，**组间不混排**——一个路径命中
+   * 和一个标题命中本来就不可比，混着排只会让人猜不透它凭什么在前面。
+   *
+   * 待办 / 备忘 / 工具是纯前端过滤，敲第一个字就出来，不用等 Rust 那边的
+   * Everything；应用和文件仍然是一次 `search_query` 的结果（有防抖）。
+   */
+  const sections = useMemo(() => {
+    if (query === "") return [];
+
+    const hitRow = (hit: SearchHit): Row => ({
+      key: `${hit.kind}:${hit.path}`,
+      kind: hit.kind,
+      title: hit.name,
+      meta: hit.path,
+      hit,
+      run: () => void open(hit),
+    });
+
+    return [
+      {
+        key: "task",
+        label: "待办",
+        rows: matchTasks(tasks, query)
+          .slice(0, TASK_LIMIT)
+          .map<Row>((task) => ({
+            key: `task:${task.id}`,
+            kind: "task",
+            title: task.title,
+            meta: taskMeta(task),
+            run: () => onOpenTask(task.id),
+          })),
+      },
+      {
+        key: "note",
+        label: "备忘",
+        rows: matchNotes(notes, query)
+          .slice(0, NOTE_LIMIT)
+          .map<Row>((note) => ({
+            key: `note:${note.id}`,
+            kind: "note",
+            // 备忘没有标题，正文就是标题：截命中处那一段，一眼能看出它为什么在这儿
+            title: snippet(note.body, query, 26) || "（空备忘）",
+            meta: noteMeta(note),
+            run: () => onOpenNote(note.id),
+          })),
+      },
+      {
+        key: "tool",
+        label: "工具",
+        rows: matchTools(TOOLS, query)
+          .slice(0, TOOL_LIMIT)
+          .map<Row>((tool) => ({
+            key: `tool:${tool.key}`,
+            kind: "tool",
+            title: tool.name,
+            meta: tool.desc,
+            Icon: tool.Icon,
+            run: () => onOpenTool(tool.key),
+          })),
+      },
+      { key: "app", label: "应用", rows: (hits?.apps ?? []).map(hitRow) },
+      { key: "file", label: "文件", rows: (hits?.files ?? []).map(hitRow) },
+    ].filter((section) => section.rows.length > 0);
+  }, [query, tasks, notes, hits, open, onOpenTask, onOpenNote, onOpenTool]);
+
+  /** 摊平成一串：键盘上下走的就是这个顺序（和渲染同一份数据，不会对不上） */
+  const rows = useMemo(() => sections.flatMap((section) => section.rows), [sections]);
+
+  /** 结果和最近打开一起去重，批量问一次图标。只有应用 / 文件带系统图标 */
+  const iconPaths = useMemo(() => {
+    const unique = new Set<string>();
+    for (const row of rows) {
+      if (row.hit !== undefined) unique.add(row.hit.path);
+    }
+    for (const entry of recent) unique.add(entry.path);
+    return [...unique];
+  }, [rows, recent]);
+  const icons = useIcons(iconPaths);
+
+  // 选中项要跟着滚进来（上下键翻到第十条时，它得在可视区里）
+  useEffect(() => {
+    rowRefs.current[active]?.scrollIntoView({ block: "nearest" });
+  }, [active, rows]);
+
+  // 结果变少时把选中项收进范围。不做的话按回车会落空——明明看着有结果却打不开
+  useEffect(() => {
+    setActive((prev) => (prev < rows.length ? prev : 0));
+  }, [rows.length]);
 
   /** 从最近打开里摘掉一条（卡片右上角的 ×） */
   const forget = useCallback(async (path: string) => {
@@ -427,10 +617,11 @@ export function Search({ onDraft, onBack, token }: Props) {
     }
 
     if (event.key === "Enter") {
-      const hit = rows[active];
-      if (hit !== undefined) {
+      const row = rows[active];
+      if (row !== undefined) {
         event.preventDefault();
-        void open(hit);
+        // 文件是「打开」，自己的东西是「跳过去」——两条路都收在 row.run 里
+        row.run();
       }
       return;
     }
@@ -446,10 +637,6 @@ export function Search({ onDraft, onBack, token }: Props) {
     }
   };
 
-  const groups = [
-    { key: "apps", label: "应用", items: hits?.apps ?? [] },
-    { key: "files", label: "文件", items: hits?.files ?? [] },
-  ];
   let cursor = 0;
 
   return (
@@ -464,11 +651,11 @@ export function Search({ onDraft, onBack, token }: Props) {
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="搜文件、应用…"
+          placeholder="搜应用、文件、待办、备忘…"
           spellCheck={false}
           autoComplete="off"
           autoFocus
-          aria-label="搜索本机文件和程序"
+          aria-label="搜索本机的应用和文件，以及待办、备忘、小工具"
         />
         {text !== "" && (
           <button type="button" className="search__clear" onClick={clear} title="清空" aria-label="清空搜索">
@@ -546,9 +733,11 @@ export function Search({ onDraft, onBack, token }: Props) {
             </div>
           ) : (
             <div className="search__empty">
-              <span className="search__empty-title">找应用、找文件</span>
+              <span className="search__empty-title">找应用、文件、待办、备忘</span>
               <span className="search__empty-note">
                 敲名字就行，首字母也行（<code>vsc</code> 能找到 Visual Studio Code）。
+                <br />
+                自己的待办、备忘和小工具也会一起找，点一下就跳过去。
                 <br />
                 ↑↓ 挑，回车打开，Esc 清空。
               </span>
@@ -565,7 +754,7 @@ export function Search({ onDraft, onBack, token }: Props) {
                     : "换个说法试试，两三个字的片段比整句好使。"}
                 </span>
                 <div className="search__empty-acts">
-                  {/* 搜不到文件，多半是脑子里那句话本身就是一件要做的事——顺手记下来 */}
+                  {/* 搜不到东西，多半是脑子里那句话本身就是一件要做的事——顺手记下来 */}
                   <button type="button" className="chip" onClick={() => onDraft(query)}>
                     记为待办
                   </button>
@@ -580,53 +769,50 @@ export function Search({ onDraft, onBack, token }: Props) {
             )}
           </div>
         ) : (
-          groups.map((group) => {
-            if (group.items.length === 0) return null;
-            return (
-              <div className="search__group-block" key={group.key}>
-                <div className="search__group">
-                  <span>{group.label}</span>
-                  <span className="search__group-count">{group.items.length}</span>
-                </div>
-                <ul className="search__list">
-                  {group.items.map((hit) => {
-                    const index = cursor++;
-                    return (
-                      <li
-                        key={`${group.key}:${hit.path}`}
-                        ref={(node) => {
-                          rowRefs.current[index] = node;
-                        }}
-                        className={`search__row${index === active ? " search__row--on" : ""}`}
-                        onMouseMove={() => setActive(index)}
-                        onClick={() => void open(hit)}
-                        title={hit.path}
-                      >
-                        <Badge kind={hit.kind} icon={icons[hit.path]} />
-                        <span className="search__text">
-                          <span className="search__name">{hit.name}</span>
-                          <span className="search__path">{hit.path}</span>
-                        </span>
-                        {/* 只给文件和目录「在文件夹中显示」，应用本来就是个快捷方式 */}
-                        {group.key === "files" && (
-                          <button
-                            type="button"
-                            className="search__reveal"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              void reveal(hit);
-                            }}
-                          >
-                            定位
-                          </button>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+          sections.map((section) => (
+            <div className="search__group-block" key={section.key}>
+              <div className="search__group">
+                <span>{section.label}</span>
+                <span className="search__group-count">{section.rows.length}</span>
               </div>
-            );
-          })
+              <ul className="search__list">
+                {section.rows.map((row) => {
+                  const index = cursor++;
+                  return (
+                    <li
+                      key={row.key}
+                      ref={(node) => {
+                        rowRefs.current[index] = node;
+                      }}
+                      className={`search__row${index === active ? " search__row--on" : ""}`}
+                      onMouseMove={() => setActive(index)}
+                      onClick={row.run}
+                      title={row.meta}
+                    >
+                      <RowBadge row={row} icon={row.hit === undefined ? null : icons[row.hit.path]} />
+                      <span className="search__text">
+                        <span className="search__name">{row.title}</span>
+                        <span className="search__path">{row.meta}</span>
+                      </span>
+                      {/* 只给文件和目录「在文件夹中显示」，应用本来就是个快捷方式 */}
+                      {(row.kind === "file" || row.kind === "dir") && row.hit !== undefined && (
+                        <button
+                          type="button"
+                          className="search__reveal"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void reveal(row.hit!);
+                          }}
+                        >
+                          定位
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))
         )}
       </div>
     </div>

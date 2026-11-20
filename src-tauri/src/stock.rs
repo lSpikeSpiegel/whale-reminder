@@ -1,12 +1,13 @@
-//! 行情工具：搜标的、自选清单、批量报价。
+//! 行情工具：搜标的、自选清单、批量报价、K 线。
 //!
-//! 数据来自东方财富网页版在用的两个公开接口，都是 HTTPS + JSON：
+//! 数据来自东方财富网页版在用的三个公开接口，都是 HTTPS + JSON：
 //!
 //! - `searchapi.eastmoney.com/api/suggest/get`：按代码 / 名称 / 拼音搜，回一个
 //!   `QuoteID`（形如 `1.600519`，市场号 + 代码），报价接口直接认这个键；
-//! - `push2.eastmoney.com/api/qt/ulist.np/get`：一次问一批标的的现价、涨跌额、涨跌幅。
+//! - `push2.eastmoney.com/api/qt/ulist.np/get`：一次问一批标的的现价、涨跌额、涨跌幅；
+//! - `push2his.eastmoney.com/api/qt/stock/kline/get`：历史 K 线（分钟 / 日 / 周 / 月）。
 //!
-//! **取数放在 Rust 而不是前端 `fetch`**：WebView2 里跨域要对方给 CORS 头，这两个
+//! **取数放在 Rust 而不是前端 `fetch`**：WebView2 里跨域要对方给 CORS 头，这些
 //! 接口都不给，前端硬发会卡在预检上——而且失败信息只有一句 `TypeError: Failed to fetch`，
 //! 比后端拿到的错误难查得多。
 //!
@@ -30,6 +31,19 @@ const SUGGEST_TOKEN: &str = "D43BF722C8E33BDC906FB84D85E326E8";
 const QUOTE_URL: &str = "https://push2.eastmoney.com/api/qt/ulist.np/get";
 /// f1 小数位 / f2 现价 / f3 涨跌幅 / f4 涨跌额 / f12 代码 / f13 市场号 / f14 名称 / f18 昨收
 const QUOTE_FIELDS: &str = "f1,f2,f3,f4,f12,f13,f14,f18";
+
+/// 历史 K 线。
+///
+/// **必须只传 `end` + `lmt`，绝对不要传 `beg=0`**：`beg=0` 的意思是「从最早一根开始」，
+/// 那会返回 2001 年的前复权数据——而前复权 = 原价 − 累计分红，茅台这种老股算出来是
+/// **负数**（实测 `preKPrice: -313.3`）。东方财富的网页端也是靠 `lmt` 直接取末尾 N 根。
+/// 只传 `lmt` 不给 `end` 的话接口回 `data: null`，两个都得有。
+const KLINE_URL: &str = "https://push2his.eastmoney.com/api/qt/stock/kline/get";
+const KLINE_FIELDS1: &str = "f1,f2,f3,f4,f5,f6";
+/// f51 时间 / f52 开 / f53 收 / f54 高 / f55 低 / f56 成交量（手）/ f57 成交额（元）
+const KLINE_FIELDS2: &str = "f51,f52,f53,f54,f55,f56,f57";
+/// K 线永远问到这个日期为止（接口要求），实际根数由 `lmt` 决定
+const KLINE_END: &str = "20500101";
 
 /// 自选上限。面板再能滚，一屏之外的自选也没人看，还拖慢每次刷新。
 const WATCH_LIMIT: usize = 50;
@@ -63,6 +77,30 @@ pub struct StockQuote {
     pub percent: Option<f64>,
     pub prev_close: Option<f64>,
     /// 价格的小数位（接口的 f1）。个股和指数都是 2，债券会有 3，照它格式化不会错位。
+    pub digits: u8,
+}
+
+/// 一根 K 线。分钟线的时间带时分（`2026-11-20 09:31`），日线以上只有日期。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Bar {
+    pub time: String,
+    pub open: f64,
+    pub close: f64,
+    pub high: f64,
+    pub low: f64,
+    /// 成交量，单位「手」（1 手 = 100 股）。均价换算要用到
+    pub volume: f64,
+    /// 成交额，单位「元」。分时图的均价线 = 累计成交额 / 累计成交量
+    pub amount: f64,
+}
+
+/// 一张图的数据。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Chart {
+    pub bars: Vec<Bar>,
+    /// 昨收。只有分时图用得上（那是 0% 基准线），K 线不看它
+    pub prev_close: Option<f64>,
+    /// 价格小数位（接口的 `decimal`），坐标轴和读数都按它格式化
     pub digits: u8,
 }
 
@@ -278,6 +316,131 @@ pub async fn stock_quotes(secids: Vec<String>) -> AppResult<Vec<StockQuote>> {
     fetch_quotes(secids).await
 }
 
+/// 周期 → (klt, 取多少根)。
+///
+/// 根数按「一屏能画多少根」定：160 根日线差不多 8 个月，看趋势够用；分钟线要 260 根，
+/// 是因为一整场交易有 240 分钟，多要几根防着跨日，切掉旧数据由 `keep_last_session` 负责。
+fn period_spec(period: &str) -> AppResult<(&'static str, usize)> {
+    Ok(match period {
+        "min1" => ("1", 260),
+        "day" => ("101", 160),
+        "week" => ("102", 160),
+        "month" => ("103", 120),
+        other => return Err(AppError::Invalid(format!("不认识的周期：{other}"))),
+    })
+}
+
+/// 解析一行 `时间,开,收,高,低,量,额`。少一列、多一列、数字读不出来都整行丢掉——
+/// 停牌日接口会给空串，别让它把整张图带崩。
+fn parse_bar(line: &str) -> Option<Bar> {
+    let mut parts = line.split(',');
+    let time = parts.next()?.trim().to_owned();
+    if time.is_empty() {
+        return None;
+    }
+
+    let mut next = || parts.next().and_then(|value| value.trim().parse::<f64>().ok());
+    Some(Bar {
+        time,
+        open: next()?,
+        close: next()?,
+        high: next()?,
+        low: next()?,
+        volume: next()?,
+        amount: next()?,
+    })
+}
+
+fn parse_chart(body: &str) -> AppResult<Chart> {
+    let root: serde_json::Value = serde_json::from_str(body)
+        .map_err(|err| AppError::Other(format!("K 线解析失败：{err}")))?;
+
+    // data 为 null（标的已退市 / 键不合法）时按空图处理，不是错误
+    let data = &root["data"];
+    let digits = data
+        .get("decimal")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(2)
+        .min(4) as u8;
+    let prev_close = data.get("preKPrice").and_then(|v| v.as_f64());
+
+    let bars = data
+        .get("klines")
+        .and_then(|v| v.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row.as_str())
+                .filter_map(parse_bar)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(Chart {
+        bars,
+        prev_close,
+        digits,
+    })
+}
+
+/// 分时图只画当天：分钟线接口会顺着往前多给几根，按最后一根的日期切一刀。
+fn keep_last_session(bars: Vec<Bar>) -> Vec<Bar> {
+    let Some(last) = bars.last() else {
+        return bars;
+    };
+    // `2026-11-20 09:31` → `2026-11-20`；日线没有空格，split 出来就是整串
+    let day = last.time.split(' ').next().unwrap_or_default().to_owned();
+    let keep = bars
+        .iter()
+        .position(|bar| bar.time.starts_with(&day))
+        .unwrap_or(0);
+    bars.into_iter().skip(keep).collect()
+}
+
+async fn fetch_chart(secid: &str, period: &str, fqt: u8) -> AppResult<Chart> {
+    let (klt, lmt) = period_spec(period)?;
+    let fqt_text = fqt.clamp(0, 2).to_string();
+    let lmt_text = lmt.to_string();
+
+    let response = client()?
+        .get(KLINE_URL)
+        .query(&[
+            ("secid", secid),
+            ("fields1", KLINE_FIELDS1),
+            ("fields2", KLINE_FIELDS2),
+            ("klt", klt),
+            ("fqt", &fqt_text),
+            ("end", KLINE_END),
+            ("lmt", &lmt_text),
+        ])
+        .send()
+        .await
+        .map_err(|err| AppError::Other(format!("连不上行情服务器：{err}")))?;
+
+    let body = response
+        .text()
+        .await
+        .map_err(|err| AppError::Other(format!("K 线读不出来：{err}")))?;
+
+    let chart = parse_chart(&body)?;
+    if period != "min1" {
+        return Ok(chart);
+    }
+    Ok(Chart {
+        bars: keep_last_session(chart.bars),
+        ..chart
+    })
+}
+
+/// 一段历史行情。`period`：min1 / day / week / month；`fqt`：0 不复权 / 1 前复权 / 2 后复权。
+#[tauri::command]
+pub async fn stock_chart(secid: String, period: String, fqt: u8) -> AppResult<Chart> {
+    let secid = secid.trim();
+    if !secid.contains('.') {
+        return Err(AppError::Invalid("这只标的没有报价编号".into()));
+    }
+    fetch_chart(secid, &period, fqt).await
+}
+
 /// 自选清单，按加入顺序。
 #[tauri::command]
 pub fn stock_watch() -> Vec<StockItem> {
@@ -313,8 +476,8 @@ pub fn stock_watch_remove(secid: String) -> AppResult<Vec<StockItem>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        StockItem, amount, fetch_quotes, fetch_suggest, load_from, parse_quotes, parse_suggest, push,
-        remove, save_to,
+        StockItem, amount, fetch_quotes, fetch_suggest, keep_last_session, load_from, parse_bar,
+        parse_chart, parse_quotes, parse_suggest, period_spec, push, remove, save_to,
     };
     use crate::testutil::TempDir;
 
@@ -456,6 +619,81 @@ mod tests {
         assert_eq!(list[0].market, "");
     }
 
+    /* ------------------------------------------------------------ K 线 */
+
+    /// 真接口的响应（截过），字段名和嵌套层级照抄
+    const CHART_BODY: &str = r#"{"rc":0,"data":{"code":"600519","market":1,"name":"贵州茅台",
+        "decimal":2,"preKPrice":1460.21,"klines":[
+        "2026-11-19,1442.00,1460.21,1464.99,1432.10,42692,6192213063.00",
+        "2026-11-20,1450.89,1485.75,1489.09,1423.90,67229,9796311852.00"
+    ]}}"#;
+
+    #[test]
+    fn chart_parses_rows_and_meta() {
+        let chart = parse_chart(CHART_BODY).unwrap();
+        assert_eq!(chart.bars.len(), 2);
+        assert_eq!(chart.digits, 2);
+        assert_eq!(chart.prev_close, Some(1460.21));
+
+        let last = &chart.bars[1];
+        assert_eq!(last.time, "2026-11-20");
+        assert_eq!(last.open, 1450.89);
+        assert_eq!(last.close, 1485.75);
+        assert_eq!(last.high, 1489.09);
+        assert_eq!(last.low, 1423.90);
+        assert_eq!(last.volume, 67229.0);
+        assert_eq!(last.amount, 9796311852.0);
+    }
+
+    #[test]
+    fn chart_with_null_data_is_empty() {
+        let chart = parse_chart(r#"{"rc":0,"data":null}"#).unwrap();
+        assert!(chart.bars.is_empty());
+        assert_eq!(chart.prev_close, None);
+        // 读不到 decimal 时按两位小数兜底，别让坐标轴画出 0 位
+        assert_eq!(chart.digits, 2);
+    }
+
+    #[test]
+    fn broken_bar_is_dropped_not_fatal() {
+        // 停牌日 / 缺列的行只能丢，不能把整张图带崩
+        assert!(parse_bar("2026-11-20,1.0,2.0").is_none());
+        assert!(parse_bar(",1,2,3,4,5,6").is_none());
+        assert!(parse_bar("2026-11-20,a,2,3,4,5,6").is_none());
+        assert!(parse_bar("2026-11-20,1,2,3,4,5,6").is_some());
+    }
+
+    #[test]
+    fn session_keeps_only_the_last_day() {
+        let bars: Vec<_> = [
+            "2026-11-19 14:59,1,1,1,1,1,1",
+            "2026-11-19 15:00,1,1,1,1,1,1",
+            "2026-11-20 09:31,1,1,1,1,1,1",
+            "2026-11-20 09:32,1,1,1,1,1,1",
+        ]
+        .iter()
+        .map(|line| parse_bar(line).unwrap())
+        .collect();
+
+        let kept = keep_last_session(bars);
+        assert_eq!(kept.len(), 2);
+        assert!(kept.iter().all(|bar| bar.time.starts_with("2026-11-20")));
+    }
+
+    #[test]
+    fn session_of_empty_input_stays_empty() {
+        assert!(keep_last_session(Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn period_spec_maps_known_and_rejects_unknown() {
+        assert_eq!(period_spec("min1").unwrap().0, "1");
+        assert_eq!(period_spec("day").unwrap().0, "101");
+        assert_eq!(period_spec("week").unwrap().0, "102");
+        assert_eq!(period_spec("month").unwrap().0, "103");
+        assert!(period_spec("5min").is_err());
+    }
+
     /// 真接口冒烟：默认跳过，`cargo test --lib -- --ignored` 才跑（CI 不该依赖外网）。
     ///
     /// 它盯的是「请求还是那一套参数」——接口换域名、加鉴权、改字段时只有这里会先炸。
@@ -475,6 +713,22 @@ mod tests {
             assert_eq!(quotes.len(), 2, "两只都要有报价");
             assert!(quotes[0].price.is_some(), "现价没取到");
             assert!(quotes[0].digits >= 1, "小数位没取到");
+
+            // K 线：日线要能拿到一屏的量，分时只能剩当天
+            let daily = super::fetch_chart("1.600519", "day", 1)
+                .await
+                .expect("日 K 接口不通");
+            assert!(daily.bars.len() > 20, "日线只有 {} 根", daily.bars.len());
+
+            let min1 = super::fetch_chart("1.600519", "min1", 1)
+                .await
+                .expect("分时接口不通");
+            assert!(!min1.bars.is_empty(), "分时是空的");
+            let day = min1.bars[0].time.split(' ').next().unwrap_or_default();
+            assert!(
+                min1.bars.iter().all(|bar| bar.time.starts_with(day)),
+                "分时混进了别的交易日"
+            );
         });
     }
 }

@@ -137,6 +137,9 @@ const PAGE_TITLE: Record<Page, string> = {
 
 const win = getCurrentWindow();
 
+/** 从搜索页跳过来时，目标那条点亮多久。够看清是哪一条，又不至于一直挂着 */
+const FLASH_MS = 1600;
+
 function isOverdue(task: Task): boolean {
   return !!task.due_at && new Date(task.due_at).getTime() < Date.now();
 }
@@ -192,6 +195,13 @@ export function Panel() {
   const [recall, setRecall] = useState(0);
   /** 工具页进去某个工具后由子页面写进来，换页头标题用；回清单时是 null */
   const [toolTitle, setToolTitle] = useState<string | null>(null);
+  /**
+   * 从搜索页点过来时要去哪：工具要直接进那个工具，待办 / 备忘要高亮那一条。
+   * 手动点导航换页会把它清掉——那已经不是「从搜索跳过来」了。
+   */
+  const [focus, setFocus] = useState<{ kind: "tool" | "task" | "note"; id: string } | null>(null);
+  /** 正在闪的那条待办；时间到了自己熄灭 */
+  const [flashTask, setFlashTask] = useState<string | null>(null);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [brief, setBrief] = useState<DayBrief | null>(null);
@@ -420,6 +430,48 @@ export function Panel() {
     };
   }, []);
 
+  /** 已经亮过一次的待办 id：列表刷新时别再闪一遍 */
+  const flashedRef = useRef<string | null>(null);
+
+  /**
+   * 从搜索页点过来时，把目标那条滚进视野并点亮一下。
+   *
+   * 用 `querySelector` 而不是维护一张 ref 表：列表是内联渲染的，为每一行挂 ref
+   * 只为偶尔一次跳转不值当。id 是 uuid，拼进选择器没有转义问题。
+   */
+  useEffect(() => {
+    if (page !== "todo" || focus === null || focus.kind !== "task") return;
+    if (flashedRef.current === focus.id) return;
+
+    const node = panelRef.current?.querySelector<HTMLElement>(`[data-task-id="${focus.id}"]`);
+    // 还没渲染出来（数据在路上）：tasks 一变这个 effect 会再跑一次
+    if (node == null) return;
+
+    flashedRef.current = focus.id;
+    node.scrollIntoView({ block: "nearest" });
+    setFlashTask(focus.id);
+    const timer = window.setTimeout(() => setFlashTask(null), FLASH_MS);
+    return () => window.clearTimeout(timer);
+  }, [page, focus, tasks.length]);
+
+  /** 搜索页点了一条工具：切到工具页并直接进去 */
+  const openTool = useCallback((key: string) => {
+    setFocus({ kind: "tool", id: key });
+    setPage("tools");
+  }, []);
+
+  /** 搜索页点了一条待办：切到待办页并把那条点亮 */
+  const openTask = useCallback((id: string) => {
+    setFocus({ kind: "task", id });
+    setPage("todo");
+  }, []);
+
+  /** 搜索页点了一条备忘：切到备忘页并把那条点亮 */
+  const openNote = useCallback((id: string) => {
+    setFocus({ kind: "note", id });
+    setPage("notes");
+  }, []);
+
   const resetForm = () => {
     setTitle("");
     setStartOn(false);
@@ -550,7 +602,12 @@ export function Panel() {
             <button
               type="button"
               className={`rail__item${page === key ? " rail__item--on" : ""}`}
-              onClick={() => setPage(key)}
+              onClick={() => {
+                // 手动换页就不是「从搜索跳过来的」了，把目标清掉，
+                // 免得下次再进待办 / 备忘时又闪一下上次那条
+                setFocus(null);
+                setPage(key);
+              }}
               aria-current={page === key ? "page" : undefined}
               aria-label={key === "todo" && pending > 0 ? `${label}，还有 ${pending} 项没做完` : label}
             >
@@ -611,6 +668,10 @@ export function Panel() {
           {page === "search" ? (
             <Search
               token={recall}
+              tasks={tasks}
+              onOpenTool={openTool}
+              onOpenTask={openTask}
+              onOpenNote={openNote}
               onBack={() => setPage("todo")}
               onDraft={(text) => {
                 // 搜不到东西时那句话往往本身就是件要做的事：原样塞进待办输入框，
@@ -620,11 +681,15 @@ export function Panel() {
               }}
             />
           ) : page === "notes" ? (
-            <Notes onLayout={fit} />
+            <Notes onLayout={fit} focusId={focus?.kind === "note" ? focus.id : null} />
           ) : page === "history" ? (
             <History onLayout={fit} onDataChanged={() => void refresh()} />
           ) : page === "tools" ? (
-            <Tools onLayout={fit} onTitle={setToolTitle} />
+            <Tools
+              onLayout={fit}
+              onTitle={setToolTitle}
+              initial={focus?.kind === "tool" ? focus.id : null}
+            />
           ) : page === "settings" ? (
             <Settings onLayout={fit} onDataChanged={() => void refresh()} onResetSize={unlockSize} />
           ) : (
@@ -775,7 +840,13 @@ export function Panel() {
                   const span = formatSpan(task);
                   const recur = recurLabel(task);
                   return (
-                    <li key={task.id} className={`task${isOverdue(task) ? " task--overdue" : ""}`}>
+                    <li
+                      key={task.id}
+                      data-task-id={task.id}
+                      className={`task${isOverdue(task) ? " task--overdue" : ""}${
+                        flashTask === task.id ? " task--flash" : ""
+                      }`}
+                    >
                       <button
                         className="task__check"
                         onClick={() => void complete(task.id)}

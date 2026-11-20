@@ -592,12 +592,23 @@
   animation: task-in 260ms var(--spring) backwards;
   transition:
     transform 0.18s var(--spring),
-    box-shadow 0.18s var(--ease);
+    box-shadow 0.18s var(--ease),
+    background 0.32s var(--ease);
 }
 
 .task:hover {
   transform: translateY(-1px);
   box-shadow: var(--shadow-2);
+}
+
+/* 从搜索页点过来时点亮一下——面板里没有「跳到这一条」的滚动提示，
+   闪一下比让人在两页之间来回找强。熄灭靠 transition 自己褪回去 */
+.task--flash,
+.task--flash:hover {
+  background: var(--brand-soft);
+  box-shadow:
+    inset 0 0 0 1px var(--brand-2),
+    var(--shadow-1);
 }
 
 @keyframes task-in {

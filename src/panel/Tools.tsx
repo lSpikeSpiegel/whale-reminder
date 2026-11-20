@@ -2,22 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ToolCodec } from "./ToolCodec";
 import { ToolColor } from "./ToolColor";
+import { ToolImage } from "./ToolImage";
 import { ToolJson } from "./ToolJson";
 import { ToolQr } from "./ToolQr";
 import { ToolStock } from "./ToolStock";
-import {
-  CodecIcon,
-  ColorIcon,
-  HubIcon,
-  ImageIcon,
-  JsonIcon,
-  QrIcon,
-  StockIcon,
-} from "./toolIcons";
+import { CodecIcon, ColorIcon, ImageIcon, JsonIcon, QrIcon, StockIcon } from "./toolIcons";
 import type { ToolProps } from "./types";
 import "./tools.css";
 
-interface ToolDef {
+export interface ToolDef {
   key: string;
   name: string;
   /** 清单里那一行小字，一句话说清能干什么（10–12 字，超了会被省略） */
@@ -27,12 +20,15 @@ interface ToolDef {
 }
 
 /**
- * 还没实现的工具先用这个占位。
+ * 还没实现的工具用这个占位。
  *
  * `note` 写的是「打算做成什么样」——既是给用户看的预告，也是回头实现时的需求备忘。
  * 真做的时候把清单里那条的 `View` 换成自己的组件，其它地方都不用动。
+ *
+ * 目前六项都实现了，所以这里暂时没有调用方；导出是留着给下一个「先占个位」的工具用，
+ * 真用上时把 `View: soon("…")` 写回去即可。
  */
-function soon(note: string) {
+export function soon(note: string) {
   return function SoonView() {
     return (
       <section className="soon">
@@ -54,8 +50,10 @@ function soon(note: string) {
  *   （见 `Tools` 里的 `ordered`）。所以别在数组里塞「位置」这类东西。
  * - `View` 只返回内容片段（一串 `<section>`），不要自己套 `page__body`——
  *   滚动容器和高度测量由外层 `Tools` 统一管。
+ * - **搜索页也从这张表取数据**（`Search.tsx` 按 name / desc / key 匹配），
+ *   所以新工具不用另外登记一遍；key 顺便当英文别名用（「qr」能找到二维码助手）。
  */
-const TOOLS: ToolDef[] = [
+export const TOOLS: ToolDef[] = [
   {
     key: "qr",
     name: "二维码助手",
@@ -71,11 +69,11 @@ const TOOLS: ToolDef[] = [
     View: ToolStock,
   },
   {
-    key: "hub",
-    name: "聚合页",
-    desc: "天气 · 待办 · 快捷入口",
-    Icon: HubIcon,
-    View: soon("打算把天气、今日待办、常用链接拼成一块看板，打开面板就能一眼看完。"),
+    key: "image",
+    name: "图片处理",
+    desc: "压缩 · 裁剪 · 转格式",
+    Icon: ImageIcon,
+    View: ToolImage,
   },
   {
     key: "color",
@@ -83,13 +81,6 @@ const TOOLS: ToolDef[] = [
     desc: "HEX · RGB · HSL 互转",
     Icon: ColorIcon,
     View: ToolColor,
-  },
-  {
-    key: "image",
-    name: "图片处理",
-    desc: "压缩 · 裁剪 · 转格式",
-    Icon: ImageIcon,
-    View: soon("打算支持拖入图片压缩、裁剪、转格式，处理完直接存回本地。"),
   },
   {
     key: "json",
@@ -110,6 +101,8 @@ const TOOLS: ToolDef[] = [
 interface Props extends ToolProps {
   /** 进到某个工具里时换掉页头标题，回清单时传 null 恢复成「小工具」 */
   onTitle: (title: string | null) => void;
+  /** 从搜索页点进来时直接打开的那个工具（key）；null 就是停在清单上 */
+  initial?: string | null;
 }
 
 /**
@@ -118,8 +111,10 @@ interface Props extends ToolProps {
  * 一个工具占满整页会越加越挤，所以这里只做「入口」——
  * 清单行高固定、数量不限，工具自己的内容都收在详情页里。
  */
-export function Tools({ onLayout, onTitle }: Props) {
-  const [active, setActive] = useState<string | null>(null);
+export function Tools({ onLayout, onTitle, initial = null }: Props) {
+  // 初值直接取 `initial`：页面切进来时整块是重挂载的（`Panel` 那边给了 key），
+  // 所以「从搜索点进某个工具」只需要在挂载时认一次，不用再做后续同步
+  const [active, setActive] = useState<string | null>(initial);
   /** 各工具被打开过多少次，key 是工具的 `key`。没出现过的当 0 */
   const [usage, setUsage] = useState<Record<string, number>>({});
   const tool = TOOLS.find((item) => item.key === active) ?? null;
