@@ -2,6 +2,7 @@
 * text=auto eol=lf
 
 # 二进制资源不参与换行转换
+*.moc3 binary
 *.png binary
 *.webp binary
 *.ico binary

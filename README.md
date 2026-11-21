@@ -34,7 +34,7 @@
 | 数据 | SQLite + WAL，`repository` 层单点出口 | 双进程并发；前端不用 `tauri-plugin-sql` |
 | 调度 | 单表 `reminder` + 15s 轮询 tick | 轮询天然支持休眠唤醒补偿与去重 |
 | 宠物 | 写实立绘 8 张表情 WebP（521KB）+ CSS 特效层；Q 版归档 | 形象质量优先；加表情只需换脸，不用重画身体 |
-| 动态立绘 | Cubism 运行时，模型本体（moc3 + 贴图）不入库 | 作者授权不允许二次分发；有素材就用、没有就退回静态图（0.7.0 起无开关） |
+| 动态立绘 | Cubism 运行时；模型本体 moc3 16MB + 贴图 5MB 随仓库入库 | 发布包要带动态立绘，而 CI 只能从仓库取素材；0.7.0 起无开关 |
 | MCP | rmcp 3.9.0，stdio transport | 官方 Rust SDK，单二进制无 sidecar |
 
 ---
@@ -51,6 +51,18 @@
 **仅限个人非商业使用，须署名，衍生作品须同协议。一旦商业化，必须全部替换。** 详见 [assets/pet/ATTRIBUTION.md](assets/pet/ATTRIBUTION.md)。
 
 素材由 `tools/prepare-art.py` 处理：裁透明边距 → 缩放到 352×352 → 底部对齐 → WebP 压缩，16MB 降到 345KB。
+
+写实立绘（`assets/pet-real/`）与动态立绘模型（`assets/live2d/`）同出 **DeepSeek-chan** 免费模型：
+
+| | |
+|---|---|
+| 角色插画 / PSD 拆分 | 神谷凌子（Kamiya Ryoko） |
+| Live2D 绑定 | 霓虹猫_NeonNeko |
+| 模型发布 | 神谷凌子 |
+
+**仅限个人非商业使用，须署名；模型本体不可转售、不可当作素材站重新分发。** 详见
+[assets/pet-real/ATTRIBUTION.md](assets/pet-real/ATTRIBUTION.md)。仓库里的 moc3 / 贴图只是为了
+让发布包能带动态立绘，想要模型请去原作者的发布页下载。
 
 ---
 
@@ -75,6 +87,7 @@
 - [x] 工具：图片处理（拖图片或整个文件夹批量 · 压缩 / 裁剪 / 转格式 · 另存或覆盖原图）
 - [x] 搜索页：除应用和文件外，也搜待办、备忘、小工具；点一下跳到对应页面或直接打开工具
 - [x] v0.7：动态立绘改为默认开启（有模型素材就用，不再给开关）/ Esc 关闭面板
+- [x] v0.8：动态立绘模型入库，发布包装上也是动态立绘（不再只有本地构建才有）
 
 ---
 
@@ -98,7 +111,7 @@ whale-reminder/
 │   ├── src/backup.rs         自动备份与恢复
 │   └── src/tray.rs           托盘与动作/贴边菜单
 ├── assets/pet-real/          写实立绘（8 张表情 WebP + meta.json）
-├── assets/live2d/            Cubism Core、着色器、模型描述（moc3 / 贴图不入库）
+├── assets/live2d/            Cubism Core、着色器、模型描述、moc3 + 贴图
 ├── tools/                    素材处理与版本同步脚本
 └── docs/                     设计文档
 ```

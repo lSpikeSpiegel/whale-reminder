@@ -142,11 +142,11 @@ Windows 桌面宠物 + 待办提醒。Tauri 2 + React 19 + TypeScript，Rust 侧
   以**底边中点**为锚改窗口（脚不往上跳），贴着边就交给 `dock_to` 重算吸附坐标。
   动态立绘**不换窗口**：那个 moc3 的角色实测宽高比 0.43，和静态写实的 0.506 一个量级。
 - **动态立绘开不开看素材，不看构建模式**：`src/live2d/availability.ts` 在挂载前探一张贴图
-  （`main.tsx` 里等它），探到就用 Live2D，探不到（CI 产物没有 `assets/live2d/`）就走静态图。
+  （`main.tsx` 里等它），探到就用 Live2D，探不到就走静态图。素材（`model.moc3` + `textures/`）
+  0.8.0 起入库，所以开发版和 Actions 产物都带得动，探测只是给「素材被裁掉的构建」兜底。
   **没有开关**：0.7.0 起这是默认真形态，`pet_live2d` 这个设置项、`set_pet_live2d` 命令和
   `pet://live` 事件都已经删了，别再把它加回设置页。也别改回 `import.meta.env.DEV`——
-  本地 `tauri build` 出来的 release 也带着 `assets/live2d/`（`publicDir` 会拷进 `dist`），
-  按构建模式判断只会让它白跑一张静态图。
+  release 同样带着 `assets/live2d/`（`publicDir` 会拷进 `dist`），按构建模式判断只会让它白跑一张静态图。
 - **动态立绘的落位分两步，别只做第一步**：先按「顶点包围盒」等比贴底居中画一帧
   （`src/live2d/fit.ts` 的 `fitToViewport`），再按**实际画出来的像素**校正一次
   （`fixFromMeasured`）。只按顶点会小一圈——模型里有顶点摊得比着色范围宽的 drawable，
