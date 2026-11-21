@@ -28,20 +28,12 @@ src-tauri/gen/schemas
 .tmp-sdk
 .run.json
 
-# DeepSeek-chan 的 4K 贴图 / 131MB PSD 等原始素材（约 200MB）。
-# 只留导出的 assets/pet-real/，原始素材放本地、由 tools/prepare-real-art.py 生成。
-DeepSeek-chan*
-
 # 本地原始模型目录（131MB PSD + 4K 贴图 + moc3 源文件）。
 # 这是 tools/prepare-live2d.py 的输入，不进版本库——单个 PSD 就超过 GitHub
 # 100MB 的文件上限，推上去会被直接拒。
 model/
 
-# 动态立绘运行所需的 moc3 + 1024² 贴图在 0.8.0 起**入库**
-# （`assets/live2d/model.moc3`、`assets/live2d/textures/`）。
-# 原因：发布包要带动态立绘，而 CI 只能从仓库拿素材；本仓库限个人非商业使用，
 # 原模型《利用规约》的边界见 assets/pet-real/ATTRIBUTION.md。
-# 别把它们加回这里，否则 Actions 打出来的包又只剩静态图。
 
 # Editor directories and files
 .vscode/*
