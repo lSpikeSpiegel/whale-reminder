@@ -232,7 +232,11 @@ export function ToolStock({ onLayout }: ToolProps) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Escape") setQuery("");
+              // 有字先清字（吃掉这个 Esc，面板不关）；空着再按就交给面板去关
+              if (event.key === "Escape" && query !== "") {
+                event.preventDefault();
+                setQuery("");
+              }
               // 回车直接收第一条——搜「茅台」按一下就加好，不用再挪去点 ＋
               if (event.key === "Enter" && hits.length > 0) pick(hits[0]);
             }}

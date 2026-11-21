@@ -20,8 +20,6 @@ const panelWindow = getCurrentWindow();
 interface Props {
   /** 搜不到东西时的出路：把这句原话丢进待办的输入框 */
   onDraft: (text: string) => void;
-  /** 空输入框上按 Esc：回待办页（再按一次等于「算了」） */
-  onBack: () => void;
   /** 面板每次被唤起都会 +1，用来把这里清干净 */
   token: number;
   /** 面板已经拉回来的待办（未完成），直接在这里过滤，不再多问一次数据库 */
@@ -304,7 +302,6 @@ function agoLabel(at: string): string {
 
 export function Search({
   onDraft,
-  onBack,
   token,
   tasks,
   onOpenTool,
@@ -627,13 +624,13 @@ export function Search({
     }
 
     if (event.key === "Escape") {
-      event.preventDefault();
-      // 有字就先清字，空着再按才回待办——别让人一按 Esc 就被踢出这一页
+      // 有字先清字，并且吃掉这个 Esc（面板看到 defaultPrevented 就不关）；
+      // 空着就不拦了，让它冒上去，由 Panel 统一关面板——「清掉 → 关掉」
+      // 两步走，比先跳回待办页再关更顺
       if (text !== "") {
+        event.preventDefault();
         clear();
-        return;
       }
-      onBack();
     }
   };
 

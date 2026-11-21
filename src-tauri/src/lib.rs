@@ -176,7 +176,6 @@ pub fn run() {
             commands::begin_shortcut_capture,
             commands::resume_shortcut,
             commands::set_pet_style,
-            commands::set_pet_live2d,
             commands::web_log,
             commands::web_dump_pixels,
             commands::clear_history,

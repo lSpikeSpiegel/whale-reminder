@@ -18,8 +18,6 @@ pub const EVENT_ACTION: &str = "pet://action";
 pub const EVENT_STYLE: &str = "pet://style";
 /// 甩出去之后落地停稳
 pub const EVENT_LANDED: &str = "pet://landed";
-/// 设置页开关了 Live2D 动态立绘
-pub const EVENT_LIVE: &str = "pet://live";
 /// 让桌宠甩一下尾巴（呼出面板等时机）
 pub const EVENT_WAG: &str = "pet://wag";
 const MAIN_LABEL: &str = "main";

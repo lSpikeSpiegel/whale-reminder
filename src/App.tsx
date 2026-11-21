@@ -18,7 +18,7 @@ import { Bubble } from "./panel/Bubble";
 import { PickOverlay } from "./scan/PickOverlay";
 import { ScanOverlay } from "./scan/ScanOverlay";
 import { usePetBehavior } from "./pet/usePetBehavior";
-import { LIVE2D_ENABLED } from "./live2d/availability";
+import { live2dAvailable } from "./live2d/availability";
 import {
   ACTIVITY_LABEL,
   loadPetMeta,
@@ -110,8 +110,6 @@ function PetView() {
   const [meta, setMeta] = useState<PetMeta | null>(null);
   /** 立绘风格，由设置页决定；默认 Q 版，读不到设置也不影响显示 */
   const [style, setStyle] = useState<PetStyle>("chibi");
-  /** 设置页开了 Live2D 没有 */
-  const [live2d, setLive2d] = useState(false);
   /** 动态立绘加载失败的原因；非 null 就一直用静态图，不再重试 */
   const [liveFailed, setLiveFailed] = useState<string | null>(null);
   const [dock, setDock] = useState<Edge | null>(null);
@@ -122,11 +120,13 @@ function PetView() {
   /**
    * 真的用动态立绘吗。窗口尺寸和热区比例都跟着它走，所以只算一处。
    *
-   * `LIVE2D_ENABLED` 关掉时这里恒为 false：模型本体不入库，发布版根本没有素材，
-   * 但用户上次在开发版里开过的话 `settings.json` 里还留着 `pet_live2d: true`，
-   * 不拦就是「每次启动都去加载一次必失败的文件」。
+   * 就这两个条件：写实风格 + 素材探到了。动态立绘是**默认形态，没有开关**
+   * （0.7.0 起），所以不再读设置，也不再有 `pet://live` 那条事件。
+   * `live2dAvailable()` 是启动时探出来的「素材在不在」：从仓库 checkout 打的
+   * 发布版没有 moc3 和贴图，这里恒为 false，直接走静态图，不会去加载必失败的文件。
+   * `liveFailed` 是运行期兜底：模型加载到一半炸了也不换空窗，退回静态图。
    */
-  const live = LIVE2D_ENABLED && style === "real" && live2d && liveFailed === null;
+  const live = live2dAvailable() && style === "real" && liveFailed === null;
 
   /** 按下时的屏幕坐标；null 表示当前没有按下 */
   const pressOrigin = useRef<Point | null>(null);
@@ -188,32 +188,23 @@ function PetView() {
   }, []);
 
   useEffect(() => {
-    invoke<{ pet_style: PetStyle; pet_live2d: boolean }>("get_settings")
+    invoke<{ pet_style: PetStyle }>("get_settings")
       .then((view) => {
         setStyle(view.pet_style);
-        setLive2d(view.pet_live2d);
         void invoke("web_log", {
-          message: `[pet] 设置：style=${view.pet_style} live=${view.pet_live2d}`,
+          message: `[pet] 设置：style=${view.pet_style} assets=${live2dAvailable() ? "有" : "缺"}`,
         }).catch(() => {});
       })
       .catch((err) => console.error("[pet] 读取立绘风格失败", err));
-  }, []);
-
-  // 设置页开关动态立绘：重新给一次机会（之前失败过也重试）
-  useEffect(() => {
-    const pending = listen<boolean>("pet://live", (event) => {
-      setLive2d(event.payload);
-      setLiveFailed(null);
-    });
-    return () => {
-      void pending.then((unlisten) => unlisten());
-    };
   }, []);
 
   // 设置页换立绘：面板推事件过来，桌宠立刻换素材
   useEffect(() => {
     const pending = listen<string>("pet://style", (event) => {
       setStyle(event.payload as PetStyle);
+      // 顺手把上一次的加载失败清掉：换风格等于换一条渲染路径，
+      // 之前失败过也不该一直卡在静态图上（Live2D 已经不能手动开关了）
+      setLiveFailed(null);
     });
     return () => {
       void pending.then((unlisten) => unlisten());

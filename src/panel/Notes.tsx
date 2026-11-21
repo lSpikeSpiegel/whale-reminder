@@ -532,7 +532,11 @@ export function Notes({ onLayout, focusId = null }: Props) {
                   value={editText}
                   onChange={(event) => setEditText(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key === "Escape") cancelEdit();
+                    // 这个 Esc 只用来取消编辑，吃掉它，别让面板跟着关掉
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      cancelEdit();
+                    }
                     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
                       event.preventDefault();
                       void saveEdit();

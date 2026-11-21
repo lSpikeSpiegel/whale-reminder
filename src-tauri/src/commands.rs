@@ -156,8 +156,6 @@ pub struct SettingsView {
     pub panel_size: Option<crate::settings::PanelSize>,
     /// 桌宠立绘风格：chibi / real
     pub pet_style: crate::settings::PetStyle,
-    /// 是否用 Live2D 动态立绘
-    pub pet_live2d: bool,
     /// 呼出待办面板的全局快捷键（规范写法，见 `settings::normalize_shortcut`）
     pub panel_shortcut: String,
 }
@@ -173,7 +171,6 @@ fn settings_view(app: &tauri::AppHandle) -> SettingsView {
         data_dir: crate::db::data_dir().to_string_lossy().to_string(),
         panel_size: settings.panel_size,
         pet_style: settings.pet_style,
-        pet_live2d: settings.pet_live2d,
         panel_shortcut: settings.panel_shortcut,
     }
 }
@@ -297,21 +294,6 @@ pub fn set_pet_style(
 #[tauri::command]
 pub fn system_idle() -> u64 {
     crate::idle::idle_seconds()
-}
-
-/// 开关 Live2D 动态立绘。Core 的加载在前端（按需注入脚本），这里负责落盘和通知。
-///
-/// **不动窗口尺寸**：动态立绘那个模型实测宽高比 0.43，和静态写实的 0.506 同一个
-/// 量级，竖窗本来就合适；立绘自己按包围盒等比贴底，见 `src/live2d/fit.ts`。
-#[tauri::command]
-pub fn set_pet_live2d(app: tauri::AppHandle, on: bool) -> SettingsView {
-    use tauri::Emitter;
-
-    let mut settings = crate::settings::load(&app);
-    settings.pet_live2d = on;
-    crate::settings::save(&app, settings);
-    let _ = app.emit_to("main", crate::pet::EVENT_LIVE, on);
-    settings_view(&app)
 }
 
 /// 把网页传上来的 RGBA 像素写成 PNG，调试渲染用。

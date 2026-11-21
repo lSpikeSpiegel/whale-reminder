@@ -337,7 +337,11 @@ export function DatePicker({
       setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      // 吃掉这个 Esc（preventDefault），面板看到 defaultPrevented 就不会跟着关：
+      // 用户想收日历，不想连面板一起没了
+      if (event.key !== "Escape" || event.isComposing) return;
+      event.preventDefault();
+      setOpen(false);
     };
 
     document.addEventListener("pointerdown", onDown);

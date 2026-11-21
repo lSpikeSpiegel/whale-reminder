@@ -430,6 +430,25 @@ export function Panel() {
     };
   }, []);
 
+  /**
+   * Esc 关面板，和右上角那个 × 走同一条路（真关窗口，下次打开重新加载）。
+   *
+   * 只挂在冒泡阶段，并且认 `defaultPrevented`：日历浮层（`ui/DatePicker`）、
+   * 备忘编辑框、搜索页、行情搜索框自己会吃掉 Esc，它们都 `preventDefault()` 了，
+   * 这里看到就让位——别让人按一下连浮层带面板一起关掉。
+   * 设置页录热键时在捕获阶段就 `stopPropagation`，根本走不到这里。
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      // 输入法候选框里的 Esc 是「取消候选」，不是关面板
+      if (event.key !== "Escape" || event.isComposing || event.defaultPrevented) return;
+      event.preventDefault();
+      void invoke("close_panel");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   /** 已经亮过一次的待办 id：列表刷新时别再闪一遍 */
   const flashedRef = useRef<string | null>(null);
 
@@ -672,7 +691,6 @@ export function Panel() {
               onOpenTool={openTool}
               onOpenTask={openTask}
               onOpenNote={openNote}
-              onBack={() => setPage("todo")}
               onDraft={(text) => {
                 // 搜不到东西时那句话往往本身就是件要做的事：原样塞进待办输入框，
                 // 让人还能改一遍再回车，而不是替他直接建一条

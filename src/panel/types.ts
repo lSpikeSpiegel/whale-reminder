@@ -45,8 +45,6 @@ export interface SettingsView {
   panel_size: { width: number; height: number } | null;
   /** 桌宠立绘风格，对应 settings.rs 的 PetStyle */
   pet_style: "chibi" | "real";
-  /** 是否用 Live2D 动态立绘（只在写实风格下生效） */
-  pet_live2d: boolean;
   /** 呼出待办面板的全局快捷键，规范写法："Alt+Space" */
   panel_shortcut: string;
 }

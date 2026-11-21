@@ -297,9 +297,6 @@ pub struct Settings {
     /// 桌宠用哪套立绘
     #[serde(default)]
     pub pet_style: PetStyle,
-    /// 是否用 Live2D 动态立绘（只有写实风格有模型，Q 版忽略）
-    #[serde(default)]
-    pub pet_live2d: bool,
     /// 呼出待办面板的全局快捷键，写法见 `normalize_shortcut`
     #[serde(default = "default_panel_shortcut")]
     pub panel_shortcut: String,
@@ -325,7 +322,6 @@ impl Default for Settings {
             bubble_seconds: DEFAULT_BUBBLE_SECONDS,
             panel_size: None,
             pet_style: PetStyle::default(),
-            pet_live2d: false,
             panel_shortcut: default_panel_shortcut(),
             // 出厂就是新默认值，没有要迁的东西
             shortcut_default_migrated: true,
@@ -341,7 +337,6 @@ impl Settings {
                 .clamp(MIN_BUBBLE_SECONDS, MAX_BUBBLE_SECONDS),
             panel_size: self.panel_size.map(PanelSize::clamped),
             pet_style: self.pet_style,
-            pet_live2d: self.pet_live2d,
             panel_shortcut: normalize_shortcut(&self.panel_shortcut),
             shortcut_default_migrated: self.shortcut_default_migrated,
         }
@@ -501,7 +496,6 @@ mod tests {
             bubble_seconds: 10,
             panel_size: None,
             pet_style: PetStyle::Chibi,
-            pet_live2d: true,
             panel_shortcut: DEFAULT_PANEL_SHORTCUT.to_string(),
             shortcut_default_migrated: true,
         })
@@ -518,6 +512,18 @@ mod tests {
                 .unwrap();
         assert_eq!(parsed.pet_style, PetStyle::Real);
         assert_eq!(parsed.panel_size.unwrap().width, 460);
+    }
+
+    #[test]
+    fn legacy_live2d_flag_does_not_break_loading() {
+        // 0.6.0 的配置里还留着 pet_live2d。这项已经固定开着、不再存盘，
+        // 但老文件必须照样能读——否则整份设置会掉回默认值，用户的风格和尺寸全丢
+        let parsed: Settings = serde_json::from_str(
+            r#"{"pet_style":"real","pet_live2d":false,"panel_shortcut":"Alt+Space"}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.pet_style, PetStyle::Real);
+        assert_eq!(parsed.panel_shortcut, "Alt+Space");
     }
 
     #[test]
@@ -540,14 +546,12 @@ mod tests {
                 height: 520,
             }),
             pet_style: PetStyle::Real,
-            pet_live2d: false,
             panel_shortcut: "Control+Alt+P".to_string(),
             shortcut_default_migrated: true,
         };
         let raw = serde_json::to_string(&settings).unwrap();
         let back: Settings = serde_json::from_str(&raw).unwrap();
         assert_eq!(back.panel_size, settings.panel_size);
-        assert_eq!(back.pet_live2d, settings.pet_live2d);
         assert_eq!(back.panel_shortcut, "Control+Alt+P");
     }
 
